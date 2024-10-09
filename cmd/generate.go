@@ -73,60 +73,77 @@ func init() {
 
 func runGenerate(projectDir string) {
 	projectDir, poolDir := computeDirs(projectDir)
-	cleanPoolDir(poolDir)
+	if err := cleanPoolDir(poolDir); err != nil {
+		log.Error("Error cleaning pool directory: %v", err)
+		os.Exit(1)
+	}
+
 	if generateEmptyPool {
 		return
 	}
+
 	var targetPaths []string
 	if testEnabled {
 		targetPaths = []string{projectDir}
 	} else {
 		targetPaths = viper.GetStringSlice("Modules")
 	}
-	replacePoolDirInGoMod(poolDir)
+	if err := replacePoolDirInGoMod(poolDir); err != nil {
+		log.Error("Error replacing pool dir in go.mod: %v", err)
+		os.Exit(1)
+	}
 
 	fmt.Println(`Hexya Generate
 	--------------`)
 	fmt.Println("Modules paths:")
 	fmt.Println(" -", strings.Join(targetPaths, "\n - "))
 
-	fmt.Print(`1/5 - Loading program...`)
+	log.Info("1/5 - Loading program...")
 	packs, err := loadProgram(targetPaths, testEnabled)
 	if err != nil {
-		panic(err)
+		log.Error("Error loading program: %v", err)
+		os.Exit(1)
 	}
 	mods := generate.GetModulePackages(packs)
-	fmt.Println("Ok")
+	log.Info("Ok")
 
-	fmt.Print("2/5 - Generating symlinks...")
-	createSymlinks(mods, projectDir)
-	fmt.Println("Ok")
-
-	fmt.Print("3/5 - Generating pool...")
-	generate.CreatePool(mods, poolDir)
-	fmt.Println("Ok")
-
-	fmt.Print("4/5 - Checking the generated code...")
-	_, err = loadProgram(targetPaths, testEnabled)
-	if err != nil {
-		fmt.Println("FAIL")
-		fmt.Println(err)
+	log.Info("2/5 - Generating symlinks...")
+	if err := createSymlinks(mods, projectDir); err != nil {
+		log.Error("Error generating symlinks: %v", err)
 		os.Exit(1)
 	}
 	fmt.Println("Ok")
 
-	fmt.Print("5/5 - Creating main.go in project...")
+	log.Info("3/5 - Generating pool...")
+	if err := generate.CreatePool(mods, poolDir); err != nil {
+		log.Error("Error generating pool: %v", err)
+		os.Exit(1)
+	}
+	fmt.Println("Ok")
+
+	log.Info("4/5 - Checking the generated code...")
+	if _, err := loadProgram(targetPaths, testEnabled); err != nil {
+		log.Error("FAIL")
+		log.Error(err.Error())
+		os.Exit(1)
+	}
+	fmt.Println("Ok")
+
+	log.Info("5/5 - Creating main.go in project...")
 	if testEnabled {
 		fmt.Println("SKIPPED")
 	} else {
-		createStartFile(projectDir, targetPaths)
+		if err := createStartFile(projectDir, targetPaths); err != nil {
+			log.Error("Error creating main.go: %v", err)
+			os.Exit(1)
+		}
 		fmt.Println("Ok")
 	}
 
-	fmt.Println("Pool generated successfully")
+	log.Info("Pool generated successfully")
 }
 
-func createStartFile(projectDir string, targetPaths []string) {
+func createStartFile(projectDir string, targetPaths []string) error {
 	cmdName := filepath.Base(projectDir)
 	tmplData := struct {
 		Imports    []string
@@ -136,17 +153,26 @@ func createStartFile(projectDir string, targetPaths []string) {
 		Executable: cmdName,
 	}
 	sfn := filepath.Join(projectDir, startFileName)
-	generate.CreateFileFromTemplate(sfn, startFileTemplate, tmplData)
+	err := generate.CreateFileFromTemplate(sfn, startFileTemplate, tmplData)
+	if err != nil {
+		return fmt.Errorf("failed to create main.go in %s: %w", projectDir, err)
+	}
+	return nil
 }
 
-func createSymlinks(modules []*generate.ModuleInfo, projectDir string) {
-	cleanModuleSymlinks(projectDir)
+func createSymlinks(modules []*generate.ModuleInfo, projectDir string) error {
+	if err := cleanModuleSymlinks(projectDir); err != nil {
+		return fmt.Errorf("failed to clean module symlinks: %w", err)
+	}
 	for _, m := range modules {
 		if m.ModType != generate.Base {
 			continue
 		}
-		createModuleSymlinks(m, projectDir)
+		if err := createModuleSymlinks(m, projectDir); err != nil {
+			return fmt.Errorf("failed to create symlinks for module %s: %w", m.Name, err)
+		}
 	}
+	return nil
 }
 
 func loadProgram(targetPaths []string, tests bool) ([]*packages.Package, error) {
@@ -159,12 +185,20 @@ func loadProgram(targetPaths []string, tests bool) ([]*packages.Package, error) 
 	return packs, err
 }
 
-func replacePoolDirInGoMod(poolDir string) {
-	runCommand("go", "mod", "edit", "-replace", fmt.Sprintf("github.com/hexya-erp/pool@v1.0.2=%s", poolDir))
+func replacePoolDirInGoMod(poolDir string) error {
+	err := runCommand("go", "mod", "edit", "-replace", fmt.Sprintf("github.com/hexya-erp/pool=%s", poolDir))
+	if err != nil {
+		return fmt.Errorf("failed to replace pool directory in go.mod: %w", err)
+	}
+	// Cleaning up unused dependencies after modification
+	if err := runCommand("go", "mod", "tidy"); err != nil {
+		log.Error("[ERROR] Failed to tidy go.mod: %v", err)
+	}
+	return nil
 }
 
 func computeDirs(projectDir string) (string, string) {
-	poolDir, err := filepath.Abs(filepath.Join(projectDir, PoolDirRel))
+	poolDir, err := filepath.Abs(filepath.Join(projectDir, "pool"))
 	if err != nil {
 		panic(err)
 	}
@@ -173,22 +207,49 @@ func computeDirs(projectDir string) (string, string) {
 
 // cleanPoolDir removes all files in the given directory and leaves only
 // one empty file declaring package 'pool'.
-func cleanPoolDir(dirName string) {
-	os.RemoveAll(dirName)
+func cleanPoolDir(dirName string) error {
+	err := os.RemoveAll(dirName)
+	if err != nil {
+		return fmt.Errorf("failed to remove directory %s: %w", dirName, err)
+	}
+
 	modelsDir := filepath.Join(dirName, generate.PoolModelPackage)
 	queryDir := filepath.Join(dirName, generate.PoolQueryPackage)
 	interfacesDir := filepath.Join(dirName, generate.PoolInterfacesPackage)
-	os.MkdirAll(modelsDir, 0755)
-	os.MkdirAll(queryDir, 0755)
-	os.MkdirAll(interfacesDir, 0755)
-	generate.CreateFileFromTemplate(filepath.Join(modelsDir, TempEmpty), emptyPoolTemplate, generate.PoolModelPackage)
-	generate.CreateFileFromTemplate(filepath.Join(queryDir, TempEmpty), emptyPoolTemplate, generate.PoolQueryPackage)
-	generate.CreateFileFromTemplate(filepath.Join(interfacesDir, TempEmpty), emptyPoolTemplate, generate.PoolInterfacesPackage)
 
-	if err := writeFileFromTemplate(filepath.Join(dirName, "go.mod"), emptyPoolGoMod, nil); err != nil {
-		log.Panic("Error while saving generated source file", "error", err, "fileName", "go.mod")
+	if err := os.MkdirAll(modelsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create models directory: %w", err)
 	}
+	if err := os.MkdirAll(queryDir, 0755); err != nil {
+		return fmt.Errorf("failed to create query directory: %w", err)
+	}
+	if err := os.MkdirAll(interfacesDir, 0755); err != nil {
+		return fmt.Errorf("failed to create interfaces directory: %w", err)
+	}
+
+	err = generate.CreateFileFromTemplate(filepath.Join(modelsDir, TempEmpty), emptyPoolTemplate, generate.PoolModelPackage)
+	if err != nil {
+		return fmt.Errorf("failed to create models pool template: %w", err)
+	}
+
+	err = generate.CreateFileFromTemplate(filepath.Join(queryDir, TempEmpty), emptyPoolTemplate, generate.PoolQueryPackage)
+	if err != nil {
+		return fmt.Errorf("failed to create query pool template: %w", err)
+	}
+
+	err = generate.CreateFileFromTemplate(filepath.Join(interfacesDir, TempEmpty), emptyPoolTemplate, generate.PoolInterfacesPackage)
+	if err != nil {
+		return fmt.Errorf("failed to create interfaces pool template: %w", err)
+	}
+
+	// Now create the go.mod file in the pool directory
+	err = writeFileFromTemplate(filepath.Join(dirName, "go.mod"), emptyPoolGoMod, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create go.mod file: %w", err)
+	}
+
 	copyGoModReplaces(dirName)
+	return nil
 }
 
 func copyGoModReplaces(poolDir string) {
@@ -236,32 +297,49 @@ func writeFileFromTemplate(fileName string, tmpl *template.Template, data interf
 
 // createModuleSymlinks create the symlinks of the given module in the
 // project directory.
-func createModuleSymlinks(mod *generate.ModuleInfo, projectDir string) {
+func createModuleSymlinks(mod *generate.ModuleInfo, projectDir string) error {
 	for _, dir := range symlinkDirs {
 		mDir := filepath.Dir(mod.GoFiles[0])
 		srcPath := filepath.Join(mDir, dir)
 		dstPath := filepath.Join(projectDir, ResDirRel, dir)
+
 		if _, err := os.Stat(srcPath); err != nil {
-			// Subdir doesn't exist, so we don't symlink
+			// Subdir doesn't exist, so skip the symlink creation
 			continue
 		}
+
 		if err := os.MkdirAll(dstPath, 0755); err != nil {
-			panic(err)
+			return fmt.Errorf("failed to create destination directory %s: %w", dstPath, err)
 		}
-		if err := os.Symlink(srcPath, filepath.Join(dstPath, mod.Name)); err != nil {
-			panic(err)
+
+		// Check if the symlink already exists and remove it
+		linkPath := filepath.Join(dstPath, mod.Name)
+		if _, err := os.Lstat(linkPath); err == nil {
+			if err := os.RemoveAll(linkPath); err != nil {
+				return fmt.Errorf("failed to remove existing symlink %s: %w", linkPath, err)
+			}
+		}
+
+		if err := os.Symlink(srcPath, linkPath); err != nil {
+			return fmt.Errorf("failed to create symlink for module %s: %w", mod.Name, err)
 		}
 	}
+	return nil
 }
 
 // cleanModuleSymlinks removes all symlinks in the server symlink directories.
 // Note that this function actually removes and recreates the symlink directories.
-func cleanModuleSymlinks(projectDir string) {
+func cleanModuleSymlinks(projectDir string) error {
 	for _, dir := range symlinkDirs {
 		dirPath := filepath.Join(projectDir, ResDirRel, dir)
-		os.RemoveAll(dirPath)
-		os.Mkdir(dirPath, 0775)
+		if err := os.RemoveAll(dirPath); err != nil {
+			return fmt.Errorf("failed to remove symlink directory %s: %w", dirPath, err)
+		}
+		if err := os.Mkdir(dirPath, 0775); err != nil {
+			return fmt.Errorf("failed to recreate symlink directory %s: %w", dirPath, err)
+		}
 	}
+	return nil
 }
 
 var emptyPoolTemplate = template.Must(template.New("").Parse(`
