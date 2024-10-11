@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"github.com/hexya-erp/hexya/src/tools/generate/ast"
+	"github.com/hexya-erp/hexya/src/tools/generate/utils"
 	"path/filepath"
 	"strings"
 
@@ -84,7 +85,12 @@ func runGenerate(projectDir string) {
 	}
 	fmt.Println("Ok")
 
-	// Step 5: Load Program Packages
+	err = gomod.TidyGoMod(poolDir)
+	if err != nil {
+		log.Panic(fmt.Sprintf("Error running go mod tidy for pool directory: %v", err))
+	}
+
+	// Step 5: Load Program Packages using GetModulePackages
 	fmt.Print("5/9 - Loading program packages... ")
 	var targetPaths []string
 	if testEnabled {
@@ -92,19 +98,16 @@ func runGenerate(projectDir string) {
 	} else {
 		targetPaths = viper.GetStringSlice("Modules")
 	}
+
+	// Using GetModulePackages to load the packages
 	packs, err := file_operations.LoadProgram(targetPaths, testEnabled)
 	if err != nil {
 		log.Panic(fmt.Sprintf("Error loading program packages: %v", err))
 	}
 
-	// Convert loaded packages into ModuleInfo
-	modules := models.ConvertPackagesToModules(packs)
-	fmt.Println("Ok")
-
-	// Log loaded modules for validation
-	fmt.Println("Loaded Modules:")
-	for _, mod := range modules {
-		fmt.Printf(" - Module: %s, Type: %v\n", mod.PkgPath, mod.ModType)
+	modules, err := utils.GetModulePackages(packs) // Updated part
+	if err != nil {
+		log.Panic(fmt.Sprintf("Error getting module packages: %v", err))
 	}
 
 	// Step 6: Generate Symlinks for Resources
