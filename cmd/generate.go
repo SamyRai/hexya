@@ -110,6 +110,9 @@ func runGenerate(projectDir string) {
 		log.Panic(fmt.Sprintf("Error getting module packages: %v", err))
 	}
 
+	fmt.Println("Modules loaded successfully: ", len(modules))
+	fmt.Printf("Modules: %v\n", modules)
+
 	// Step 6: Generate Symlinks for Resources
 	fmt.Print("6/9 - Generating symlinks for resources... ")
 	fmt.Println("Modules paths:")
