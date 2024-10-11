@@ -5,14 +5,17 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/hexya-erp/hexya/src/tools/generate/config"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
-	"text/template"
 
+	"github.com/hexya-erp/hexya/src/tools/generate/templates"
 	"github.com/spf13/cobra"
 )
+
+var symlinkDirs = []string{"static", "data", "demo", "resources", "i18n"}
 
 var moduleCmd = &cobra.Command{
 	Use:   "module",
@@ -40,16 +43,25 @@ For local only modules (i.e. modules tied to a project), use 'hexya module new' 
 			fmt.Println(err)
 			os.Exit(1)
 		}
+
+		// Load the template
+		hexyaGoTemplate, err := templates.GetTemplate("HexyaGoTemplate")
+		if err != nil {
+			fmt.Printf("Error retrieving hexya go template: %v\n", err)
+			os.Exit(1)
+		}
+
 		// Create the 000hexya.go file
 		data := struct {
 			ModuleName string
 		}{
 			ModuleName: path.Base(modulePath),
 		}
-		if err := writeFileFromTemplate("000hexya.go", hexyaGoTmpl, data); err != nil {
+		if err := templates.CreateFileFromTemplate("000hexya.go", hexyaGoTemplate, data); err != nil {
 			fmt.Println(err)
 			os.Exit(1)
 		}
+
 		// Create standard directories
 		for _, dir := range symlinkDirs {
 			if err := os.MkdirAll(dir, 0755); err != nil {
@@ -64,7 +76,7 @@ var moduleNewCmd = &cobra.Command{
 	Use:   "new MODULE_NAME",
 	Short: "Initialize a new local module in current project",
 	Long: `Initialize and scaffold a new local module in the current project. 
-The current directory must be an Hexya project directory.
+The current directory must be a Hexya project directory.
 
 If you plan to make a module and distribute it on its own, you should create a new directory and run 'hexya module init' inside instead.`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -84,15 +96,16 @@ If you plan to make a module and distribute it on its own, you should create a n
 
 		// Get this project path
 		c = exec.Command("go", "list", "-m")
-		projectPathBytes, err := c.Output()
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-		projectPath := string(projectPathBytes)
 
 		// Create hexya module subdir
 		os.MkdirAll(moduleName, 0755)
+
+		// Load the template
+		hexyaGoTemplate, err := templates.GetTemplate("HexyaGoTemplate")
+		if err != nil {
+			fmt.Printf("Error retrieving hexya go template: %v\n", err)
+			os.Exit(1)
+		}
 
 		// Create the 000hexya.go file
 		data := struct {
@@ -100,13 +113,14 @@ If you plan to make a module and distribute it on its own, you should create a n
 		}{
 			ModuleName: moduleName,
 		}
-		if err := writeFileFromTemplate(filepath.Join(projectPath, "000hexya.go"), hexyaGoTmpl, data); err != nil {
+		if err := templates.CreateFileFromTemplate(filepath.Join(moduleName, "000hexya.go"), hexyaGoTemplate, data); err != nil {
 			fmt.Println(err)
 			os.Exit(1)
 		}
+
 		// Create standard directories
 		for _, dir := range symlinkDirs {
-			if err := os.MkdirAll(filepath.Join(projectPath, dir), 0755); err != nil {
+			if err := os.MkdirAll(filepath.Join(moduleName, dir), 0755); err != nil {
 				fmt.Println(err)
 			}
 		}
@@ -121,10 +135,10 @@ var moduleCleanCmd = &cobra.Command{
 You should use this command before committing your work.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		runCommand("go", "mod", "edit", "-dropreplace", "github.com/hexya-erp/pool@v1.0.2")
-		if err := removeProjectDir(PoolDirRel); err != nil {
+		if err := removeProjectDir(config.PoolDirRel); err != nil {
 			fmt.Println(err)
 		}
-		if err := removeProjectDir(ResDirRel); err != nil {
+		if err := removeProjectDir(config.ResDirRel); err != nil {
 			fmt.Println(err)
 		}
 		runCommand("go", "mod", "tidy")
@@ -137,21 +151,3 @@ func init() {
 	moduleCmd.AddCommand(moduleNewCmd)
 	moduleCmd.AddCommand(moduleCleanCmd)
 }
-
-var hexyaGoTmpl = template.Must(template.New("").Parse(`
-package {{ .ModuleName }}
-
-import (
-	"github.com/hexya-erp/hexya/src/server"
-	// blank import here this hexya module dependencies 
-)
-
-const MODULE_NAME string = {{ .ModuleName }}
-
-func init() {
-	server.RegisterModule(&server.Module{
-		Name:     MODULE_NAME,
-		PostInit: func() {},
-	})
-}
-`))

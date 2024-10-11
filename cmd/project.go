@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/hexya-erp/hexya/src/tools/generate/config"
 	"os"
 	"path/filepath"
 
@@ -57,10 +58,10 @@ var projectCleanCmd = &cobra.Command{
 You should use this command before committing your work.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		runCommand("go", "mod", "edit", "-dropreplace", "github.com/hexya-erp/pool@v1.0.2")
-		if err := removeProjectDir(PoolDirRel); err != nil {
+		if err := removeProjectDir(config.PoolDirRel); err != nil {
 			fmt.Println(err)
 		}
-		if err := removeProjectDir(ResDirRel); err != nil {
+		if err := removeProjectDir(config.ResDirRel); err != nil {
 			fmt.Println(err)
 		}
 		runCommand("go", "mod", "tidy")

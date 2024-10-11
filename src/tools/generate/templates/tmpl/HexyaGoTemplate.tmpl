@@ -1,0 +1,15 @@
+package {{ .ModuleName }}
+
+import (
+	"github.com/hexya-erp/hexya/src/server"
+	// blank import here this hexya module dependencies
+)
+
+const MODULE_NAME string = "{{ .ModuleName }}"
+
+func init() {
+	server.RegisterModule(&server.Module{
+		Name:     MODULE_NAME,
+		PostInit: func() {},
+	})
+}

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -62,16 +63,29 @@ type zapLogger struct {
 	parent *zapLogger
 }
 
-// Panic logs a error level message then panics
+// Panic logs an error level message then panics
 func (l *zapLogger) Panic(msg string, ctx ...interface{}) {
 	if l.checkParent() {
 		l.zap.Errorw(msg, ctx...)
 	}
-	panicData := msg + "\n"
+
+	// Start preparing the panic data message
+	var panicData strings.Builder
+	panicData.WriteString(msg + "\n")
+
+	// Iterate over context key-value pairs safely
 	for i := 0; i < len(ctx); i += 2 {
-		panicData += fmt.Sprintf("\t%v : %v\n", ctx[i], ctx[i+1])
+		// Ensure there is a corresponding value for each key
+		if i+1 < len(ctx) {
+			panicData.WriteString(fmt.Sprintf("\t%v : %v\n", ctx[i], ctx[i+1]))
+		} else {
+			// Handle the case where there's a key without a corresponding value
+			panicData.WriteString(fmt.Sprintf("\t%v : <missing value>\n", ctx[i]))
+		}
 	}
-	panic(panicData)
+
+	// Panic with the constructed message
+	panic(panicData.String())
 }
 
 // Error logs an error level message

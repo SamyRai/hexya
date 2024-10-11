@@ -1,11 +1,7 @@
-// Copyright 2017 NDP Systèmes. All Rights Reserved.
-// See LICENSE file for full licensing details.
+// config/config.go
+package config
 
-package generate
-
-import (
-	"github.com/hexya-erp/hexya/src/tools/logging"
-)
+import "github.com/hexya-erp/hexya/src/tools/generate/models"
 
 const (
 	// HexyaPath is the go import path of the base hexya package
@@ -18,14 +14,23 @@ const (
 	PoolPath = "github.com/hexya-erp/pool"
 	// PoolModelPackage is the name of the pool package with model data
 	PoolModelPackage = "h"
-	// PoolQueryPackage is the name of the pool package with query dat
+	// PoolQueryPackage is the name of the pool package with query data
 	PoolQueryPackage = "q"
 	// PoolInterfacesPackage is the name of the pool packages with all model interfaces
 	PoolInterfacesPackage = "m"
+	// Base is the PackageType for the base package of a module
+	Base models.PackageType = iota
+	// Models is the PackageType for the hexya/models package
+	Models
+	// TempEmpty is a temporary filename
+	TempEmpty = "temp.go"
+	// PoolDirRel is the relative directory for pool
+	PoolDirRel = "pool"
+	// ResDirRel is the relative directory for resources
+	ResDirRel = "res"
 )
 
 var (
-	log logging.Logger
 	// ModelMixins are the names of the mixins declared in the models package
 	ModelMixins = map[string]bool{
 		"CommonMixin":    true,
@@ -33,13 +38,8 @@ var (
 		"ModelMixin":     true,
 		"TransientMixin": true,
 	}
-	// MethodsToAdd are methods that are declared directly in the generated code.
-	// Usually this is because they can't be declared in base_model due to not convertible arg or return types.
-	methodsToAdd = map[string]bool{
-		"Aggregates": true,
-	}
+	// ConditionFuncs are conditions used for models
+	ConditionFuncs = []string{"And", "AndNot", "Or", "OrNot"}
+	// SymlinkDirs are directories that should have symbolic links
+	SymlinkDirs = []string{"static", "data", "demo", "resources", "i18n"}
 )
-
-func init() {
-	log = logging.GetLogger("tools/generate")
-}

@@ -75,4 +75,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/hexya-erp/pool => "/Users/damirmukimov/projects/Glowing Pixels/hexya-main/hexya/pool"
+//replace github.com/hexya-erp/pool v1.0.2 => "/Users/damirmukimov/projects/Glowing Pixels/hexya-main/demo-hexya/pool"

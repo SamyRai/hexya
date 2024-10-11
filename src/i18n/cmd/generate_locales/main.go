@@ -6,13 +6,13 @@ package main
 import (
 	"encoding/csv"
 	"fmt"
+	"github.com/hexya-erp/hexya/src/tools/generate/templates"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 	"text/template"
 
-	"github.com/hexya-erp/hexya/src/tools/generate"
 	"github.com/hexya-erp/hexya/src/tools/strutils"
 )
 
@@ -75,7 +75,7 @@ func main() {
 		recMap["grouping"] = fmt.Sprintf("NumberGrouping{%s}", strings.Join(grps, ", "))
 		res = append(res, recMap)
 	}
-	generate.CreateFileFromTemplate("locales.go", tmpl, res)
+	templates.CreateFileFromTemplate("locales.go", tmpl, res)
 }
 
 var tmpl = template.Must(template.New("").Parse(`

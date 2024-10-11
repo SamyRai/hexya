@@ -5,6 +5,9 @@ package translations
 
 import (
 	"fmt"
+	ast2 "github.com/hexya-erp/hexya/src/tools/generate/ast"
+	config2 "github.com/hexya-erp/hexya/src/tools/generate/config"
+	"github.com/hexya-erp/hexya/src/tools/generate/models"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -19,7 +22,6 @@ import (
 	"github.com/hexya-erp/hexya/src/menus"
 	"github.com/hexya-erp/hexya/src/models/types"
 	"github.com/hexya-erp/hexya/src/server"
-	"github.com/hexya-erp/hexya/src/tools/generate"
 	"github.com/hexya-erp/hexya/src/tools/logging"
 	"github.com/hexya-erp/hexya/src/tools/po"
 	"github.com/hexya-erp/hexya/src/tools/strutils"
@@ -69,8 +71,8 @@ func UpdatePOFiles(config map[string]interface{}) {
 	}
 	fmt.Println("Ok.")
 
-	modInfos := []*generate.ModuleInfo{{Package: *packs[0], ModType: generate.Base}}
-	modelsASTData := generate.GetModelsASTDataForModules(modInfos, true)
+	modInfos := []*models.ModuleInfo{{Package: *packs[0], ModType: config2.Base}}
+	modelsASTData := ast2.GetModelsASTDataForModules(modInfos, true)
 
 	for _, lang := range langs {
 		fmt.Printf("Generating language %s.", lang)
@@ -214,7 +216,7 @@ func addCodeToMessages(lang string, moduleDir string, messages MessageMap) Messa
 		ast.Inspect(astFile, func(n ast.Node) bool {
 			switch node := n.(type) {
 			case *ast.CallExpr:
-				fnctName, err := generate.ExtractFunctionName(node)
+				fnctName, err := ast2.ExtractFunctionName(node)
 				if err != nil {
 					return true
 				}
@@ -296,7 +298,7 @@ func updateMessagesWithResourceTranslation(lang, id, source string, messages Mes
 }
 
 // addSelectionToMessages adds to the given messages map the selections for the given model and field
-func addSelectionToMessages(lang string, model string, field string, fieldASTData generate.FieldASTData, messages MessageMap) MessageMap {
+func addSelectionToMessages(lang string, model string, field string, fieldASTData ast2.FieldASTData, messages MessageMap) MessageMap {
 	if len(fieldASTData.Selection) == 0 {
 		return messages
 	}
@@ -333,7 +335,7 @@ func GetOrCreateMessage(messages MessageMap, msgRef MessageRef, value string) po
 }
 
 // addDescriptionToMessages adds to the given messages map the description translation for the given model and field
-func addDescriptionToMessages(lang string, model string, field string, fieldASTData generate.FieldASTData, messages MessageMap) MessageMap {
+func addDescriptionToMessages(lang string, model string, field string, fieldASTData ast2.FieldASTData, messages MessageMap) MessageMap {
 	description := fieldASTData.Description
 	if description == "" {
 		description = strutils.Title(fieldASTData.Name)
@@ -347,7 +349,7 @@ func addDescriptionToMessages(lang string, model string, field string, fieldASTD
 }
 
 // addHelpToMessages adds to the given messages map the help translation for the given model and field
-func addHelpToMessages(lang string, model string, field string, fieldASTData generate.FieldASTData, messages MessageMap) MessageMap {
+func addHelpToMessages(lang string, model string, field string, fieldASTData ast2.FieldASTData, messages MessageMap) MessageMap {
 	help := fieldASTData.Help
 	if help == "" {
 		return messages

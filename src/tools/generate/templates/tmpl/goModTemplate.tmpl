@@ -1,0 +1,19 @@
+module {{ .ModuleName }}
+
+go {{ .GoVersion }}
+
+{{- if .RequiredModules }}
+require (
+{{- range .RequiredModules }}
+    {{ . }}
+{{- end }}
+)
+{{ end }}
+
+{{- if .Replaces }}
+replace (
+{{- range .Replaces }}
+    {{ .Module }} => {{ .Path }}
+{{- end }}
+)
+{{ end }}
