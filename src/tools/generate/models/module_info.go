@@ -41,19 +41,12 @@ func ConvertPackagesToModules(packages []*packages.Package) []*ModuleInfo {
 // GatherImportsFromModules gathers the necessary import paths from the provided modules.
 
 // GatherCoreAndModuleImports splits core imports from module imports.
-func GatherCoreAndModuleImports(modules []*ModuleInfo) (coreImports []string, moduleImports []string) {
+func GatherCoreAndModuleImports(modules []string) (coreImports []string, moduleImports []string) {
 	// Core imports
 	coreImports = []string{
 		"github.com/hexya-erp/hexya/cmd",
 		"github.com/spf13/cobra",
 	}
 
-	// Module imports
-	for _, module := range modules {
-		if module.PkgPath != "" {
-			moduleImports = append(moduleImports, module.PkgPath)
-		}
-	}
-
-	return coreImports, moduleImports
+	return coreImports, modules
 }

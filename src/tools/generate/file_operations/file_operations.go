@@ -3,10 +3,10 @@ package file_operations
 import (
 	"fmt"
 	"github.com/hexya-erp/hexya/src/tools/generate/config"
+	"github.com/hexya-erp/hexya/src/tools/generate/data"
 	"github.com/hexya-erp/hexya/src/tools/generate/models"
 	"github.com/hexya-erp/hexya/src/tools/generate/templates"
 	"github.com/hexya-erp/hexya/src/tools/logging"
-	"github.com/spf13/viper"
 	"golang.org/x/tools/go/packages"
 	"os"
 	"path/filepath"
@@ -40,14 +40,6 @@ func CleanPoolDir(poolDir string) error {
 
 	log.Info("Pool directory cleaned successfully")
 	return nil
-}
-
-// DetermineTargetPaths returns the target paths based on whether the test flag is set.
-func DetermineTargetPaths(projectDir string, testEnabled bool) []string {
-	if testEnabled {
-		return []string{projectDir}
-	}
-	return viper.GetStringSlice("Modules")
 }
 
 // CreateEmptyPool creates an empty pool structure in the pool directory.
@@ -124,12 +116,15 @@ func CreateMainFile(dir string, coreImports, moduleImports []string, executableN
 }
 
 func LoadProgram(targetPaths []string, tests bool) ([]*packages.Package, error) {
+	fmt.Printf("Loading packages for target paths: %v\n", targetPaths) // Debugging
 	conf := packages.Config{
 		Mode: packages.NeedDeps | packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedTypes | packages.NeedTypesSizes |
 			packages.NeedImports | packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles,
 		Tests: tests,
 	}
+
 	packs, err := packages.Load(&conf, targetPaths...)
+
 	return packs, err
 }
 
@@ -175,4 +170,79 @@ func CleanModuleSymlinks(projectDir string) {
 		os.RemoveAll(dirPath)
 		os.Mkdir(dirPath, 0775)
 	}
+}
+
+// CreatePoolFiles creates all pool files for the given model data
+func CreatePoolFiles(dir string, mData *data.ModelData) error {
+	fmt.Printf("Sorting model data for model: %s\n", mData.Name) // Debugging
+	mData.Sort()
+
+	// Helper function to create files from a template
+	createFile := func(path, templateName string, mData *data.ModelData) error {
+		fmt.Printf("Creating file: %s using template: %s\n", path, templateName) // Debugging
+		tmpl, err := templates.GetTemplate(templateName)
+		if err != nil {
+			return fmt.Errorf("failed to get template %s: %w", templateName, err)
+		}
+		if err := templates.CreateFileFromTemplate(path, tmpl, mData); err != nil {
+			return fmt.Errorf("failed to create file from template %s: %w", templateName, err)
+		}
+		return nil
+	}
+
+	// Create the model's interface file in interface directory
+	interfaceFile := filepath.Join(dir, config.PoolInterfacesPackage, fmt.Sprintf("%s.go", mData.SnakeName))
+	fmt.Printf("Creating interface file for model: %s\n", mData.Name) // Debugging
+	if err := createFile(interfaceFile, "PoolInterfacesTemplate", mData); err != nil {
+		return err
+	}
+
+	// Create the models directory if not exists
+	modelDir := filepath.Join(dir, config.PoolModelPackage, mData.SnakeName)
+	if _, err := os.Stat(modelDir); os.IsNotExist(err) {
+		fmt.Printf("Creating models directory: %s\n", modelDir) // Debugging
+		if err = os.MkdirAll(modelDir, 0755); err != nil {
+			return fmt.Errorf("failed to create models directory for %s: %w", mData.Name, err)
+		}
+	}
+
+	// Create the model's file in models directory
+	modelFile := filepath.Join(dir, config.PoolModelPackage, fmt.Sprintf("%s.go", mData.SnakeName))
+	fmt.Printf("Creating model file for model: %s\n", mData.Name) // Debugging
+	if err := createFile(modelFile, "PoolModelsTemplate", mData); err != nil {
+		return err
+	}
+
+	// Create the model's file in model's subdirectory
+	modelSubFile := filepath.Join(dir, config.PoolModelPackage, mData.SnakeName, fmt.Sprintf("%s.go", mData.SnakeName))
+	fmt.Printf("Creating model subdirectory file for model: %s\n", mData.Name) // Debugging
+	if err := createFile(modelSubFile, "PoolModelsDirTemplate", mData); err != nil {
+		return err
+	}
+
+	// Create the model's query directory if not exists
+	queryDir := filepath.Join(dir, config.PoolQueryPackage, mData.SnakeName)
+	if _, err := os.Stat(queryDir); os.IsNotExist(err) {
+		fmt.Printf("Creating query directory: %s\n", queryDir) // Debugging
+		if err = os.MkdirAll(queryDir, 0755); err != nil {
+			return fmt.Errorf("failed to create query directory for %s: %w", mData.Name, err)
+		}
+	}
+
+	// Create the model's query file in query directory
+	queryFile := filepath.Join(dir, config.PoolQueryPackage, fmt.Sprintf("%s.go", mData.SnakeName))
+	fmt.Printf("Creating query file for model: %s\n", mData.Name) // Debugging
+	if err := createFile(queryFile, "PoolQueryTemplate", mData); err != nil {
+		return err
+	}
+
+	// Create the model's query file in model's query subdirectory
+	querySubFile := filepath.Join(dir, config.PoolQueryPackage, mData.SnakeName, fmt.Sprintf("%s.go", mData.SnakeName))
+	fmt.Printf("Creating model's query subdirectory file for model: %s\n", mData.Name) // Debugging
+	if err := createFile(querySubFile, "PoolModelsQueryTemplate", mData); err != nil {
+		return err
+	}
+
+	fmt.Printf("Completed creating pool files for model: %s\n", mData.Name) // Debugging
+	return nil
 }

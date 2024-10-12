@@ -72,7 +72,7 @@ func UpdatePOFiles(config map[string]interface{}) {
 	fmt.Println("Ok.")
 
 	modInfos := []*models.ModuleInfo{{Package: *packs[0], ModType: config2.Base}}
-	modelsASTData := ast2.GetModelsASTDataForModules(modInfos, true)
+	modelsASTData := ast2.GetModelsASTData(modInfos, true)
 
 	for _, lang := range langs {
 		fmt.Printf("Generating language %s.", lang)

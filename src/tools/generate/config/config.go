@@ -41,5 +41,8 @@ var (
 	// ConditionFuncs are conditions used for models
 	ConditionFuncs = []string{"And", "AndNot", "Or", "OrNot"}
 	// SymlinkDirs are directories that should have symbolic links
-	SymlinkDirs = []string{"static", "data", "demo", "resources", "i18n"}
+	SymlinkDirs  = []string{"static", "data", "demo", "resources", "i18n"}
+	MethodsToAdd = map[string]bool{
+		"Aggregates": true,
+	}
 )
