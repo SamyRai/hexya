@@ -1,4 +1,4 @@
-package ast
+package parser
 
 import (
 	"bytes"
@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/hexya-erp/hexya/src/models/fieldtype"
 	"github.com/hexya-erp/hexya/src/tools/generate/config"
-	"github.com/hexya-erp/hexya/src/tools/generate/data"
 	"github.com/hexya-erp/hexya/src/tools/generate/models"
 	"go/ast"
 	"go/printer"
@@ -73,7 +72,7 @@ func extractModel(ident ast.Expr, modInfo *models.ModuleInfo) (string, error) {
 }
 
 // getTypeData returns a data.TypeData instance representing the typ AST Expression
-func getTypeData(typ ast.Expr, modInfo *models.ModuleInfo) data.TypeData {
+func getTypeData(typ ast.Expr, modInfo *models.ModuleInfo) models.TypeData {
 	typStr := types.TypeString(modInfo.TypesInfo.TypeOf(typ), (*types.Package).Name)
 	if strings.Contains(typStr, "invalid type") {
 		var byts bytes.Buffer
@@ -84,7 +83,7 @@ func getTypeData(typ ast.Expr, modInfo *models.ModuleInfo) data.TypeData {
 		typStr = byts.String()
 	}
 	importPath := computeExportPath(modInfo.TypesInfo.TypeOf(typ))
-	return data.TypeData{
+	return models.TypeData{
 		Type:       typStr,
 		ImportPath: importPath,
 	}
@@ -106,8 +105,8 @@ func computeExportPath(typ types.Type) string {
 
 // extractReturnType returns the return type of the first returned value
 // of the given FuncType as a string and an import path if needed.
-func extractReturnType(ft *ast.FuncType, modInfo *models.ModuleInfo) []data.TypeData {
-	var res []data.TypeData
+func extractReturnType(ft *ast.FuncType, modInfo *models.ModuleInfo) []models.TypeData {
+	var res []models.TypeData
 	if ft.Results != nil {
 		for _, l := range ft.Results.List {
 			res = append(res, getTypeData(l.Type, modInfo))
@@ -117,12 +116,12 @@ func extractReturnType(ft *ast.FuncType, modInfo *models.ModuleInfo) []data.Type
 }
 
 // defaultFields returns the map of default fields for the model with the given name
-func defaultFields(name string) map[string]FieldASTData {
-	res := make(map[string]FieldASTData)
-	idField := FieldASTData{
+func defaultFields(name string) map[string]models.FieldASTData {
+	res := make(map[string]models.FieldASTData)
+	idField := models.FieldASTData{
 		Name: "ID",
 		JSON: "id",
-		Type: data.TypeData{
+		Type: models.TypeData{
 			Type: "int64",
 		},
 		FType: fieldtype.Integer,
@@ -130,70 +129,70 @@ func defaultFields(name string) map[string]FieldASTData {
 	res["ID"] = idField
 	switch name {
 	case "BaseMixin":
-		res["CreateDate"] = FieldASTData{
+		res["CreateDate"] = models.FieldASTData{
 			Name:        "CreateDate",
 			JSON:        "create_date",
 			Description: "Created On",
-			Type: data.TypeData{
+			Type: models.TypeData{
 				Type:       "dates.DateTime",
 				ImportPath: config.DatesPath,
 			},
 			FType: fieldtype.DateTime,
 		}
-		res["CreateUID"] = FieldASTData{
+		res["CreateUID"] = models.FieldASTData{
 			Name:        "CreateUID",
 			JSON:        "create_uid",
 			Description: "Created By",
-			Type:        data.TypeData{Type: "int64"},
+			Type:        models.TypeData{Type: "int64"},
 			FType:       fieldtype.Integer,
 		}
-		res["WriteDate"] = FieldASTData{
+		res["WriteDate"] = models.FieldASTData{
 			Name:        "WriteDate",
 			JSON:        "write_date",
 			Description: "Updated On",
-			Type: data.TypeData{
+			Type: models.TypeData{
 				Type:       "dates.DateTime",
 				ImportPath: config.DatesPath,
 			},
 			FType: fieldtype.DateTime,
 		}
-		res["WriteUID"] = FieldASTData{
+		res["WriteUID"] = models.FieldASTData{
 			Name:        "WriteUID",
 			JSON:        "write_uid",
 			Description: "Updated By",
-			Type:        data.TypeData{Type: "int64"},
+			Type:        models.TypeData{Type: "int64"},
 			FType:       fieldtype.Integer,
 		}
-		res["LastUpdate"] = FieldASTData{
+		res["LastUpdate"] = models.FieldASTData{
 			Name:        "LastUpdate",
 			JSON:        "__last_update",
 			Description: "Last Updated On",
-			Type: data.TypeData{
+			Type: models.TypeData{
 				Type:       "dates.DateTime",
 				ImportPath: config.DatesPath,
 			},
 			FType: fieldtype.DateTime,
 		}
-		res["DisplayName"] = FieldASTData{
+		res["DisplayName"] = models.FieldASTData{
 			Name:        "DisplayName",
 			JSON:        "display_name",
 			Description: "Display Name",
-			Type:        data.TypeData{Type: "string"},
+			Type:        models.TypeData{Type: "string"},
 			FType:       fieldtype.Char,
 		}
 	case "ModelMixin":
-		res["HexyaExternalID"] = FieldASTData{
+		res["HexyaExternalID"] = models.FieldASTData{
 			Name:        "HexyaExternalID",
 			JSON:        "hexya_external_id",
 			Description: "External ID",
-			Type:        data.TypeData{Type: "string"},
+			Type:        models.TypeData{Type: "string"},
 			FType:       fieldtype.Char,
 		}
-		res["HexyaVersion"] = FieldASTData{
+		res["HexyaVersion"] = models.FieldASTData{
 			Name:        "HexyaVersion",
 			JSON:        "hexya_version",
 			Description: "External Version",
-			Type:        data.TypeData{Type: "int"},
+			Type:        models.TypeData{Type: "int"},
 			FType:       fieldtype.Integer,
 		}
 	}
@@ -230,7 +229,7 @@ func extractSelection(expr ast.Expr) map[string]string {
 }
 
 // parseFieldAttribute parses the given KeyValueExpr of a field definition
-func parseFieldAttribute(fElem *ast.KeyValueExpr, fData FieldASTData, modInfo *models.ModuleInfo) FieldASTData {
+func parseFieldAttribute(fElem *ast.KeyValueExpr, fData models.FieldASTData, modInfo *models.ModuleInfo) models.FieldASTData {
 	switch fElem.Key.(*ast.Ident).Name {
 	case "JSON":
 		fData.JSON = parseStringValue(fElem.Value)
@@ -251,7 +250,7 @@ func parseFieldAttribute(fElem *ast.KeyValueExpr, fData FieldASTData, modInfo *m
 		fData.Type = getTypeData(fElem.Value.(*ast.CallExpr).Args[0], modInfo)
 	case "Embed":
 		if fElem.Value.(*ast.Ident).Name == "true" {
-			fData.embed = true
+			fData.Embed = true
 		}
 	}
 	return fData
@@ -281,8 +280,8 @@ func extractModelNameFromFunc(ce *ast.CallExpr, modInfo *models.ModuleInfo) (str
 }
 
 // extractParams extracts the parameters of the given FuncType
-func extractParams(ft *ast.FuncType, modInfo *models.ModuleInfo) []data.ParamData {
-	var params []data.ParamData
+func extractParams(ft *ast.FuncType, modInfo *models.ModuleInfo) []models.ParamData {
+	var params []models.ParamData
 	for i, pl := range ft.Params.List {
 		if i == 0 {
 			// pass the first argument (rs)
@@ -295,7 +294,7 @@ func extractParams(ft *ast.FuncType, modInfo *models.ModuleInfo) []data.ParamDat
 				typ = el.Elt
 				variadic = true
 			}
-			params = append(params, data.ParamData{
+			params = append(params, models.ParamData{
 				Name:     nn.Name,
 				Variadic: variadic,
 				Type:     getTypeData(typ, modInfo)})

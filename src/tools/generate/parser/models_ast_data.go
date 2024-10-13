@@ -1,5 +1,5 @@
-// Package ast generate/models_ast_data.go
-package ast
+// Package parser generate/models_ast_data.go
+package parser
 
 import (
 	"errors"
@@ -10,13 +10,12 @@ import (
 
 	"github.com/hexya-erp/hexya/src/models/fieldtype"
 	"github.com/hexya-erp/hexya/src/tools/generate/config"
-	"github.com/hexya-erp/hexya/src/tools/generate/data"
 	"github.com/hexya-erp/hexya/src/tools/generate/models"
 	"github.com/hexya-erp/hexya/src/tools/generate/utils"
 	"go/ast"
 )
 
-var log = logging.GetLogger("ast")
+var log = logging.GetLogger("parser")
 
 // GetModelsASTData GetModelsASTDataForModules returns the MethodASTData for all methods in given modules.
 // If validate is true, then only models that have been explicitly declared will appear in
@@ -208,7 +207,7 @@ func parseAddMethod(node *ast.CallExpr, modInfo *models.ModuleInfo, modelsData *
 		(*modelsData)[modelName] = NewModelASTData(modelName)
 	}
 
-	methData := MethodASTData{
+	methData := models.MethodASTData{
 		Name:      methodName,
 		Doc:       utils.FormatDocString(doc),
 		PkgPath:   modInfo.PkgPath,
@@ -261,10 +260,10 @@ func parseAddFields(node *ast.CallExpr, modInfo *models.ModuleInfo, modelsData *
 			fieldParams = fd.Elts
 		}
 		fType := fieldtype.Type(strings.ToLower(typeStr))
-		fData := FieldASTData{
+		fData := models.FieldASTData{
 			Name:  fieldName,
 			FType: fType,
-			Type: data.TypeData{
+			Type: models.TypeData{
 				Type:       fType.DefaultGoType().String(),
 				ImportPath: importPath,
 			},
@@ -272,7 +271,7 @@ func parseAddFields(node *ast.CallExpr, modInfo *models.ModuleInfo, modelsData *
 		for _, elem := range fieldParams {
 			fElem := elem.(*ast.KeyValueExpr)
 			fData = parseFieldAttribute(fElem, fData, modInfo)
-			if fData.embed {
+			if fData.Embed {
 				(*modelsData)[modelName].Embeds[fieldName] = true
 			}
 		}
@@ -295,7 +294,7 @@ func NewModelASTData(name string) ModelASTData {
 		Name:         name,
 		Fields:       defaultFields(name),
 		IsModelMixin: config.ModelMixins[name],
-		Methods:      make(map[string]MethodASTData),
+		Methods:      make(map[string]models.MethodASTData),
 		Mixins:       make(map[string]bool),
 		Embeds:       make(map[string]bool),
 		ModelType:    "",

@@ -1,4 +1,4 @@
-package data
+package models
 
 // MethodData describes a method in a RecordSet
 type MethodData struct {
@@ -14,4 +14,15 @@ type MethodData struct {
 	IReturnString    string
 	Call             string
 	ToDeclare        bool
+	ImportPaths      []string
+}
+
+// MethodASTData describes a method's AST data
+type MethodASTData struct {
+	Name      string
+	Doc       string
+	PkgPath   string
+	Params    []ParamData
+	Returns   []TypeData
+	ToDeclare bool
 }

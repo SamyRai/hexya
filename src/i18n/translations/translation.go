@@ -5,9 +5,9 @@ package translations
 
 import (
 	"fmt"
-	ast2 "github.com/hexya-erp/hexya/src/tools/generate/ast"
 	config2 "github.com/hexya-erp/hexya/src/tools/generate/config"
 	"github.com/hexya-erp/hexya/src/tools/generate/models"
+	ast2 "github.com/hexya-erp/hexya/src/tools/generate/parser"
 	"go/ast"
 	"go/parser"
 	"go/token"

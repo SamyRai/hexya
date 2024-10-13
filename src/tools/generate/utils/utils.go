@@ -35,18 +35,6 @@ func CapitalizeFirst(str string) string {
 	return strings.ToUpper(string(str[0])) + str[1:]
 }
 
-// TrimRecordSetSuffix Helper function to trim "Set" suffix from a type
-func TrimRecordSetSuffix(typ string) string {
-	return strings.TrimSuffix(typ, "Set")
-}
-
-// AddImport adds an import path to the dependency map if it's not empty.
-func AddImport(depsMap *map[string]bool, importPath string) {
-	if importPath != "" {
-		(*depsMap)[importPath] = true
-	}
-}
-
 // JoinStrings joins multiple strings with a given separator, ignoring empty strings.
 func JoinStrings(strs []string, sep string) string {
 	var nonEmptyStrs []string

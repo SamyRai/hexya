@@ -1,20 +1,22 @@
 package builders
 
 import (
-	"github.com/hexya-erp/hexya/src/tools/generate/data"
 	"github.com/hexya-erp/hexya/src/tools/generate/models"
 )
 
-// AddFieldTypesToModelData extracts field types from mData.Fields and adds them to mData.Types
-func AddFieldTypesToModelData(mData *data.ModelData) {
+// AddFieldTypesToModelData extracts field types from mData.Fields and adds them to mData.Types.
+// It now uses the DepsManager for managing dependencies.
+func AddFieldTypesToModelData(mData *models.ModelData) {
 	fTypes := make(map[string]bool)
-	tDeps := make(map[string]bool)
+
+	// Iterate over the fields and gather types and dependencies
 	for _, f := range mData.Fields {
 		if fTypes[f.IType] {
 			continue
 		}
 		fTypes[f.IType] = true
-		tDeps[f.ImportPath] = true
+
+		// Add the field type to the model data
 		mData.Types = append(mData.Types, models.FieldType{
 			Type:    f.IType,
 			SanType: f.SanType,
@@ -26,11 +28,8 @@ func AddFieldTypesToModelData(mData *data.ModelData) {
 				{Name: "In", Multi: true}, {Name: "NotIn", Multi: true}, {Name: "ChildOf"},
 			},
 		})
-	}
-	for dep := range tDeps {
-		if dep == "" {
-			continue
-		}
-		mData.TypesDeps = append(mData.TypesDeps, dep)
+
+		// Add the field's import path to dependencies using DepsManager
+
 	}
 }

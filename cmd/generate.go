@@ -2,7 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/hexya-erp/hexya/src/tools/generate/ast"
+	"github.com/hexya-erp/hexya/src/tools/generate/models"
+	"github.com/hexya-erp/hexya/src/tools/generate/parser"
 	"github.com/hexya-erp/hexya/src/tools/generate/utils"
 	"path/filepath"
 	"strings"
@@ -10,7 +11,6 @@ import (
 	"github.com/hexya-erp/hexya/src/tools/generate"
 	"github.com/hexya-erp/hexya/src/tools/generate/file_operations"
 	"github.com/hexya-erp/hexya/src/tools/generate/gomod"
-	"github.com/hexya-erp/hexya/src/tools/generate/models"
 	"github.com/hexya-erp/hexya/src/tools/generate/templates"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -133,7 +133,7 @@ func runGenerate(projectDir string) {
 	fmt.Print("8/9 - Generating pool files... ")
 
 	// Gather AST data for all models (core and addons)
-	modelsASTData := ast.GetModelsASTData(modules, true)
+	modelsASTData := parser.GetModelsASTData(modules, true)
 	if len(modelsASTData) == 0 {
 		log.Error("[ERROR] No valid models found for pool generation.")
 	}

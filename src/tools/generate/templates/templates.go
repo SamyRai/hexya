@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
+	"github.com/hexya-erp/hexya/src/tools/generate/models"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 )
 
@@ -84,4 +86,112 @@ func CreateFileFromTemplate(fileName string, tmpl *template.Template, data inter
 	}
 
 	return nil
+}
+
+// ImportsForPoolInterfacesTemplate generates a list of imports required for the PoolInterfaces template.
+func ImportsForPoolInterfacesTemplate(mData *models.ModelData) []string {
+	var imports []string
+
+	// Always include the pool query package import
+	imports = append(imports, fmt.Sprintf("\"github.com/hexya-erp/pool/%s\"", mData.QueryPackageName))
+
+	return removeDuplicateImports(imports)
+}
+
+// ImportsForPoolQueryTemplate generates a list of imports required for the PoolQuery template.
+func ImportsForPoolQueryTemplate(mData *models.ModelData) []string {
+	imports := []string{
+		`"github.com/hexya-erp/hexya/src/models"`,
+		fmt.Sprintf(`"github.com/hexya-erp/pool/%s/%s"`, mData.QueryPackageName, mData.SnakeName),
+	}
+
+	return removeDuplicateImports(imports)
+}
+
+// ImportsForPoolModelsTemplate generates a list of imports required for the PoolModels template.
+func ImportsForPoolModelsTemplate(mData *models.ModelData) []string {
+	imports := []string{
+		`"github.com/hexya-erp/hexya/src/models"`,
+		fmt.Sprintf(`"github.com/hexya-erp/pool/%s"`, mData.QueryPackageName),
+		fmt.Sprintf(`"github.com/hexya-erp/pool/%s/%s"`, mData.ModelsPackageName, mData.SnakeName),
+		fmt.Sprintf(`"github.com/hexya-erp/pool/%s"`, mData.InterfacesPackageName),
+	}
+
+	return removeDuplicateImports(imports)
+}
+
+// ImportsForPoolModelsDirTemplate generates a list of imports required for the PoolModelsDir template.
+func ImportsForPoolModelsDirTemplate(mData *models.ModelData) []string {
+	imports := []string{
+		fmt.Sprintf(`"github.com/hexya-erp/pool/%s"`, mData.QueryPackageName),
+		fmt.Sprintf(`"github.com/hexya-erp/pool/%s"`, mData.InterfacesPackageName),
+	}
+
+	for _, f := range mData.Fields {
+		if f.ImportPath != "" {
+			imports = append(imports, fmt.Sprintf(`"%s"`, getPackagePathFromAST(f.ImportPath)))
+		}
+	}
+
+	for _, d := range mData.Deps {
+		if d != "" {
+			imports = append(imports, fmt.Sprintf(`"%s"`, getPackagePathFromAST(d)))
+		}
+	}
+
+	for _, r := range mData.Methods {
+		if r.ParamsTypes != "" {
+			fmt.Printf("\n\n\n!!!Method: %v\n", r.ParamsTypes)
+		}
+	}
+
+	return removeDuplicateImports(imports)
+}
+
+// ImportsForPoolModelsQueryTemplate generates a list of imports required for the PoolModelsQuery template.
+func ImportsForPoolModelsQueryTemplate(mData *models.ModelData) []string {
+	imports := []string{
+		`"github.com/hexya-erp/hexya/src/models/operator"`,
+		`"github.com/hexya-erp/hexya/src/models"`,
+	}
+
+	for _, f := range mData.Fields {
+		if f.ImportPath != "" {
+			imports = append(imports, fmt.Sprintf(`"%s"`, getPackagePathFromAST(f.ImportPath)))
+		}
+	}
+
+	return removeDuplicateImports(imports)
+}
+
+// removeDuplicateImports ensures that the imports list contains only unique entries.
+func removeDuplicateImports(imports []string) []string {
+	seen := make(map[string]bool)
+	uniqueImports := []string{}
+
+	for _, imp := range imports {
+		if !seen[imp] {
+			seen[imp] = true
+			uniqueImports = append(uniqueImports, imp)
+		}
+	}
+	return uniqueImports
+}
+
+func getPackagePathFromAST(importPath string) string {
+	// Split by `/` to get each part of the path and avoid confusion with dots
+	parts := strings.Split(importPath, "/")
+
+	// Check the last part for any type references (contains ".")
+	lastPart := parts[len(parts)-1]
+	if strings.Contains(lastPart, ".") {
+		// It's a type reference, so we remove everything after the last dot
+		parts[len(parts)-1] = lastPart[:strings.LastIndex(lastPart, ".")]
+	}
+
+	// Rejoin the parts to form the package path
+	packagePath := strings.Join(parts, "/")
+
+	// Return the final package path
+	return packagePath
 }

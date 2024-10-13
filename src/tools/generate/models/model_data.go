@@ -1,8 +1,7 @@
 // data/model_data.go
-package data
+package models
 
 import (
-	"github.com/hexya-erp/hexya/src/tools/generate/models"
 	"sort"
 )
 
@@ -15,19 +14,17 @@ type ModelData struct {
 	InterfacesPackageName string
 	ModelType             string
 	IsModelMixin          bool
-	Deps                  []string
 	RelModels             []string
 	Fields                []FieldData
 	Methods               []MethodData
 	AllMethods            []MethodData
 	ConditionFuncs        []string
-	Types                 []models.FieldType
-	TypesDeps             []string
+	Types                 []FieldType
+	Imports               []string // Add Imports field to collect all imports
 }
 
-// Sort sorts all slices fields of this modelData so that the generated code is always the same.
+// Sort sorts all slices fields of this ModelData so that the generated code is always the same.
 func (m *ModelData) Sort() {
-	sort.Strings(m.Deps)
 	sort.Slice(m.Fields, func(i, j int) bool {
 		return m.Fields[i].Name < m.Fields[j].Name
 	})

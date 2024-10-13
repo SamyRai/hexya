@@ -1,4 +1,4 @@
-package data
+package models
 
 // A TypeData holds a Type string and optional import path for this type.
 type TypeData struct {
