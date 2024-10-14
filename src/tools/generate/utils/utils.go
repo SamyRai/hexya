@@ -9,51 +9,12 @@ import (
 	"strings"
 )
 
-// CreateTypeIdent creates a string from the given type that can be used inside an identifier.
-func CreateTypeIdent(typStr string) string {
-	res := strings.Replace(typStr, ".", "", -1)
-	res = strings.Replace(res, "[", "Slice", -1)
-	res = strings.Replace(res, "map[", "Map", -1)
-	res = strings.Replace(res, "]", "", -1)
-	res = CapitalizeFirst(res)
-	return res
-}
-
 // TrimInterfacePackagePrefix removes the 'm.' prefix from types
 func TrimInterfacePackagePrefix(typ string) string {
 	toks := strings.Split(typ, "]")
 	lastTok := strings.TrimPrefix(toks[len(toks)-1], config.PoolInterfacesPackage+".") // Updated reference
 	toks = append(toks[:len(toks)-1], lastTok)
 	return strings.Join(toks, "]")
-}
-
-// CapitalizeFirst capitalizes the first letter of the given string.
-func CapitalizeFirst(str string) string {
-	if len(str) == 0 {
-		return ""
-	}
-	return strings.ToUpper(string(str[0])) + str[1:]
-}
-
-// JoinStrings joins multiple strings with a given separator, ignoring empty strings.
-func JoinStrings(strs []string, sep string) string {
-	var nonEmptyStrs []string
-	for _, str := range strs {
-		if str != "" {
-			nonEmptyStrs = append(nonEmptyStrs, str)
-		}
-	}
-	return strings.Join(nonEmptyStrs, sep)
-}
-
-// TrimTrailingNewline trims any trailing newline character from the given string.
-func TrimTrailingNewline(str string) string {
-	return strings.TrimRight(str, "\n")
-}
-
-// TrimTrailingComma trims any trailing comma from the given string.
-func TrimTrailingComma(str string) string {
-	return strings.TrimRight(str, ",")
 }
 
 // FormatDocString formats the given string by stripping whitespaces at the

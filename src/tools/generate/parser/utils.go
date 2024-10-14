@@ -1,40 +1,44 @@
 package parser
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
-	"github.com/hexya-erp/hexya/src/models/fieldtype"
 	"github.com/hexya-erp/hexya/src/tools/generate/config"
-	"github.com/hexya-erp/hexya/src/tools/generate/models"
 	"go/ast"
-	"go/printer"
-	"go/types"
+	"go/token"
+	"strconv"
 	"strings"
 )
 
-// ExtractFunctionName returns the name of the called function in the given call expression.
-func ExtractFunctionName(node *ast.CallExpr) (string, error) {
-	switch nf := node.Fun.(type) {
-	case *ast.SelectorExpr:
-		return nf.Sel.Name, nil
-	case *ast.Ident:
-		return nf.Name, nil
-	default:
-		return "", errors.New("unexpected node type")
-	}
+// A generalMixinError is returned if the mixin is
+// a general mixin set in NewXXXXModel function.
+type generalMixinError struct{}
+
+// Error method for generalMixinError
+func (gme generalMixinError) Error() string {
+	return "General Mixin Error"
 }
 
-// extractModel extracts the model name from the given AST node.
-func extractModel(ident ast.Expr, modInfo *models.ModuleInfo) (string, error) {
+var _ error = generalMixinError{}
+
+func extractModel(ident ast.Expr) (string, error) {
 	switch idt := ident.(type) {
 	case *ast.Ident:
-		// Method is called on an identifier without selector such as
-		// user.addMethod. In this case, we try to find out the model from
-		// the identifier declaration.
+		// Check if the identifier declaration exists before accessing it.
+		if idt.Obj == nil || idt.Obj.Decl == nil {
+			return "", fmt.Errorf("identifier %s is not properly declared or initialized", idt.Name)
+		}
+
+		fmt.Printf("Ident: %s\n", idt.Name)
+
+		// Method is called on an identifier without selector such as user.addMethod.
+		// In this case, we try to find out the model from the identifier declaration.
 		switch decl := idt.Obj.Decl.(type) {
 		case *ast.AssignStmt:
 			// The declaration is also an assignment
+			if len(decl.Rhs) == 0 {
+				return "", fmt.Errorf("no right-hand side in assignment for %s", idt.Name)
+			}
+
 			switch rd := decl.Rhs[0].(type) {
 			case *ast.CallExpr:
 				// The assignment is a call to a function
@@ -54,251 +58,152 @@ func extractModel(ident ast.Expr, modInfo *models.ModuleInfo) (string, error) {
 					// This is a call from inside a NewXXXXModel function
 					return "", generalMixinError{}
 				default:
-					return extractModelNameFromFunc(rd, modInfo)
+					return extractModelNameFromFunc(rd)
 				}
 			case *ast.Ident:
 				// The assignment is another identifier, we go to the declaration of this new ident.
-				return extractModel(rd, modInfo)
+				return extractModel(rd)
 			default:
-				return "", fmt.Errorf("unmanaged type %T at %s for %s", rd, modInfo.FSet.Position(rd.Pos()), idt.Name)
+				return "", fmt.Errorf("unmanaged type %T at %s", rd, idt.Name)
 			}
 		}
 	case *ast.CallExpr:
-		return extractModelNameFromFunc(idt, modInfo)
+		return extractModelNameFromFunc(idt)
 	default:
 		return "", fmt.Errorf("unmanaged call. ident: %s (%T)", idt, idt)
 	}
-	return "", errors.New("unmanaged situation")
+	return "", fmt.Errorf("unmanaged situation")
 }
 
-// getTypeData returns a data.TypeData instance representing the typ AST Expression
-func getTypeData(typ ast.Expr, modInfo *models.ModuleInfo) models.TypeData {
-	typStr := types.TypeString(modInfo.TypesInfo.TypeOf(typ), (*types.Package).Name)
-	if strings.Contains(typStr, "invalid type") {
-		var byts bytes.Buffer
-		err := printer.Fprint(&byts, modInfo.FSet, typ)
-		if err != nil {
-			log.Panic("Unable to print type", "error", err)
-		}
-		typStr = byts.String()
-	}
-	importPath := computeExportPath(modInfo.TypesInfo.TypeOf(typ))
-	return models.TypeData{
-		Type:       typStr,
-		ImportPath: importPath,
-	}
-}
-
-// computeExportPath returns the import path of the given type.
-func computeExportPath(typ types.Type) string {
-	var res string
-	switch typTyped := typ.(type) {
-	case *types.Struct, *types.Named:
-		res = types.TypeString(typTyped, (*types.Package).Path)
-	case *types.Pointer:
-		res = computeExportPath(typTyped.Elem())
-	case *types.Slice:
-		res = computeExportPath(typTyped.Elem())
-	}
-	return res
-}
-
-// extractReturnType returns the return type of the first returned value
-// of the given FuncType as a string and an import path if needed.
-func extractReturnType(ft *ast.FuncType, modInfo *models.ModuleInfo) []models.TypeData {
-	var res []models.TypeData
-	if ft.Results != nil {
-		for _, l := range ft.Results.List {
-			res = append(res, getTypeData(l.Type, modInfo))
-		}
-	}
-	return res
-}
-
-// defaultFields returns the map of default fields for the model with the given name
-func defaultFields(name string) map[string]models.FieldASTData {
-	res := make(map[string]models.FieldASTData)
-	idField := models.FieldASTData{
-		Name: "ID",
-		JSON: "id",
-		Type: models.TypeData{
-			Type: "int64",
-		},
-		FType: fieldtype.Integer,
-	}
-	res["ID"] = idField
-	switch name {
-	case "BaseMixin":
-		res["CreateDate"] = models.FieldASTData{
-			Name:        "CreateDate",
-			JSON:        "create_date",
-			Description: "Created On",
-			Type: models.TypeData{
-				Type:       "dates.DateTime",
-				ImportPath: config.DatesPath,
-			},
-			FType: fieldtype.DateTime,
-		}
-		res["CreateUID"] = models.FieldASTData{
-			Name:        "CreateUID",
-			JSON:        "create_uid",
-			Description: "Created By",
-			Type:        models.TypeData{Type: "int64"},
-			FType:       fieldtype.Integer,
-		}
-		res["WriteDate"] = models.FieldASTData{
-			Name:        "WriteDate",
-			JSON:        "write_date",
-			Description: "Updated On",
-			Type: models.TypeData{
-				Type:       "dates.DateTime",
-				ImportPath: config.DatesPath,
-			},
-			FType: fieldtype.DateTime,
-		}
-		res["WriteUID"] = models.FieldASTData{
-			Name:        "WriteUID",
-			JSON:        "write_uid",
-			Description: "Updated By",
-			Type:        models.TypeData{Type: "int64"},
-			FType:       fieldtype.Integer,
-		}
-		res["LastUpdate"] = models.FieldASTData{
-			Name:        "LastUpdate",
-			JSON:        "__last_update",
-			Description: "Last Updated On",
-			Type: models.TypeData{
-				Type:       "dates.DateTime",
-				ImportPath: config.DatesPath,
-			},
-			FType: fieldtype.DateTime,
-		}
-		res["DisplayName"] = models.FieldASTData{
-			Name:        "DisplayName",
-			JSON:        "display_name",
-			Description: "Display Name",
-			Type:        models.TypeData{Type: "string"},
-			FType:       fieldtype.Char,
-		}
-	case "ModelMixin":
-		res["HexyaExternalID"] = models.FieldASTData{
-			Name:        "HexyaExternalID",
-			JSON:        "hexya_external_id",
-			Description: "External ID",
-			Type:        models.TypeData{Type: "string"},
-			FType:       fieldtype.Char,
-		}
-		res["HexyaVersion"] = models.FieldASTData{
-			Name:        "HexyaVersion",
-			JSON:        "hexya_version",
-			Description: "External Version",
-			Type:        models.TypeData{Type: "int"},
-			FType:       fieldtype.Integer,
-		}
-	}
-	return res
-}
-
-// parseStringValue returns the value of a string expr which can be a literal
-// or an identifier for a string.
-func parseStringValue(expr ast.Expr) string {
-	var str string
-	switch v := expr.(type) {
-	case *ast.BasicLit:
-		str = v.Value
-	case *ast.Ident:
-		str = parseStringValue(v.Obj.Decl.(*ast.ValueSpec).Values[0])
-	}
-	return strings.Trim(str, "\"")
-}
-
-// extractSelection returns a map with the keys and values of the Selection
-// specified by expr.
-func extractSelection(expr ast.Expr) map[string]string {
-	res := make(map[string]string)
-	switch e := expr.(type) {
-	case *ast.CompositeLit:
-		for _, elt := range e.Elts {
-			elem := elt.(*ast.KeyValueExpr)
-			key := elem.Key.(*ast.BasicLit).Value
-			value := strings.Trim(elem.Value.(*ast.BasicLit).Value, "\"")
-			res[key] = value
-		}
-	}
-	return res
-}
-
-// parseFieldAttribute parses the given KeyValueExpr of a field definition
-func parseFieldAttribute(fElem *ast.KeyValueExpr, fData models.FieldASTData, modInfo *models.ModuleInfo) models.FieldASTData {
-	switch fElem.Key.(*ast.Ident).Name {
-	case "JSON":
-		fData.JSON = parseStringValue(fElem.Value)
-	case "Help":
-		fData.Help = parseStringValue(fElem.Value)
-	case "String":
-		fData.Description = parseStringValue(fElem.Value)
-	case "Selection":
-		fData.Selection = extractSelection(fElem.Value)
-	case "RelationModel":
-		modName, err := extractModel(fElem.Value, modInfo)
-		if err != nil {
-			log.Panic("Unable to parse RelationModel", "field", fData.Name, "error", err)
-		}
-		fData.RelModel = modName
-		fData.IsRS = true
-	case "GoType":
-		fData.Type = getTypeData(fElem.Value.(*ast.CallExpr).Args[0], modInfo)
-	case "Embed":
-		if fElem.Value.(*ast.Ident).Name == "true" {
-			fData.Embed = true
-		}
-	}
-	return fData
-}
-
-// extractModelNameFromFunc extracts the model name from a h.ModelName()
-// expression or an error if this is not a pool function.
-func extractModelNameFromFunc(ce *ast.CallExpr, modInfo *models.ModuleInfo) (string, error) {
+func extractModelNameFromFunc(ce *ast.CallExpr) (string, error) {
 	switch ft := ce.Fun.(type) {
 	case *ast.Ident:
 		// func is called without selector, then it is not from pool
-		return "", errors.New("function call without selector")
+		return "", fmt.Errorf("function call without selector")
 	case *ast.SelectorExpr:
 		switch ftt := ft.X.(type) {
 		case *ast.Ident:
 			if ftt.Name != config.PoolModelPackage && ftt.Name != "Registry" {
-				return extractModel(ftt, modInfo)
+				return extractModel(ftt)
 			}
 			return ft.Sel.Name, nil
 		case *ast.CallExpr:
-			return extractModel(ftt, modInfo)
+			return extractModel(ftt)
 		default:
 			return "", fmt.Errorf("selector is of not managed type: %T", ftt)
 		}
 	}
-	return "", errors.New("unparsable function call")
+	return "", fmt.Errorf("unparsable function call")
 }
 
-// extractParams extracts the parameters of the given FuncType
-func extractParams(ft *ast.FuncType, modInfo *models.ModuleInfo) []models.ParamData {
-	var params []models.ParamData
-	for i, pl := range ft.Params.List {
-		if i == 0 {
-			// pass the first argument (rs)
-			continue
-		}
-		for _, nn := range pl.Names {
-			var variadic bool
-			typ := pl.Type
-			if el, ok := typ.(*ast.Ellipsis); ok {
-				typ = el.Elt
-				variadic = true
-			}
-			params = append(params, models.ParamData{
-				Name:     nn.Name,
-				Variadic: variadic,
-				Type:     getTypeData(typ, modInfo)})
+// parseStringValue returns the string value of an AST expression, handling both literals and identifiers.
+func parseStringValue(expr ast.Expr) string {
+	var str string
+	switch v := expr.(type) {
+	case *ast.BasicLit:
+		// For string literals, return the value directly.
+		str = v.Value
+	case *ast.Ident:
+		// For identifiers, return the value from the declaration.
+		str = parseStringValue(v.Obj.Decl.(*ast.ValueSpec).Values[0])
+	}
+	return strings.Trim(str, "\"`")
+}
+
+// Helper function to extract the import path from an expression.
+func getImportPath(expr ast.Expr) string {
+	switch x := expr.(type) {
+	case *ast.Ident:
+		return x.Name
+	case *ast.SelectorExpr:
+		return getImportPath(x.X) + "." + x.Sel.Name
+	}
+	return ""
+}
+
+// Helper function to extract the type of parameter or return value as a string.
+func getTypeString(expr ast.Expr) string {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.SelectorExpr:
+		return t.Sel.Name
+	default:
+		return ""
+	}
+}
+
+// Helper function to extract the import path from an expression.
+func getImportPathFromExpr(expr ast.Expr) string {
+	switch x := expr.(type) {
+	case *ast.Ident:
+		return x.Name
+	case *ast.SelectorExpr:
+		return getImportPathFromExpr(x.X) + "." + x.Sel.Name
+	}
+	return ""
+}
+
+// Helper function to determine if the type is a RecordSet.
+func isRecordSetType(expr ast.Expr) bool {
+	if sel, ok := expr.(*ast.SelectorExpr); ok {
+		return strings.HasSuffix(sel.Sel.Name, "Set")
+	}
+	return false
+}
+
+// Helper function to extract selection from a CompositeLit.
+func extractSelection(expr ast.Expr) map[string]string {
+	selection := make(map[string]string)
+	switch e := expr.(type) {
+	case *ast.CompositeLit:
+		for _, elt := range e.Elts {
+			kv := elt.(*ast.KeyValueExpr)
+			key := strings.Trim(kv.Key.(*ast.BasicLit).Value, "\"`")
+			value := strings.Trim(kv.Value.(*ast.BasicLit).Value, "\"`")
+			selection[key] = value
 		}
 	}
-	return params
+	return selection
+}
+
+// extractBoolValue handles boolean extraction from an AST expression
+func extractBoolValue(expr ast.Expr) bool {
+	switch v := expr.(type) {
+	case *ast.Ident:
+		return v.Name == "true"
+	}
+	return false
+}
+
+// extractIntValue handles integer extraction from an AST expression
+func extractIntValue(expr ast.Expr) int {
+	switch v := expr.(type) {
+	case *ast.BasicLit:
+		if v.Kind == token.INT {
+			intValue, err := strconv.Atoi(v.Value)
+			if err == nil {
+				return intValue
+			}
+		}
+	}
+	return 0
+}
+
+// CreateTypeIdent creates a string from the given type that can be used inside an identifier.
+func CreateTypeIdent(typStr string) string {
+	res := strings.Replace(typStr, ".", "", -1)
+	res = strings.Replace(res, "[", "Slice", -1)
+	res = strings.Replace(res, "map[", "Map", -1)
+	res = strings.Replace(res, "]", "", -1)
+	res = CapitalizeFirst(res)
+	return res
+}
+
+// CapitalizeFirst capitalizes the first letter of the given string.
+func CapitalizeFirst(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }

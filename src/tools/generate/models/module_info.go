@@ -11,8 +11,9 @@ import (
 type ModuleInfo struct {
 	packages.Package
 	ModType PackageType
-	FSet    *token.FileSet
-	Syntax  []*ast.File // Added to handle the loaded syntax files (ASTs)
+
+	FSet   *token.FileSet
+	Syntax []*ast.File // Added to handle the loaded syntax files (ASTs)
 }
 
 // A PackageType describes a type of module
@@ -49,4 +50,24 @@ func GatherCoreAndModuleImports(modules []string) (coreImports []string, moduleI
 	}
 
 	return coreImports, modules
+}
+
+// GoModFile represents a Go module file with its relevant sections.
+type GoModFile struct {
+	ModuleName      string
+	GoVersion       string
+	RequiredModules []GoModule
+	Replaces        []ModuleReplace
+}
+
+// GoModule represents a required module in a go.mod file.
+type GoModule struct {
+	Name    string
+	Version string
+}
+
+// ModuleReplace represents a module replacement directive.
+type ModuleReplace struct {
+	Module string
+	Path   string
 }

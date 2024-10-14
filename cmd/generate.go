@@ -2,18 +2,16 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/hexya-erp/hexya/src/tools/generate/models"
-	"github.com/hexya-erp/hexya/src/tools/generate/parser"
-	"github.com/hexya-erp/hexya/src/tools/generate/utils"
-	"path/filepath"
-	"strings"
-
 	"github.com/hexya-erp/hexya/src/tools/generate"
 	"github.com/hexya-erp/hexya/src/tools/generate/file_operations"
 	"github.com/hexya-erp/hexya/src/tools/generate/gomod"
+	"github.com/hexya-erp/hexya/src/tools/generate/models"
 	"github.com/hexya-erp/hexya/src/tools/generate/templates"
+	"github.com/hexya-erp/hexya/src/tools/generate/utils"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"golang.org/x/tools/go/packages"
+	"path/filepath"
 )
 
 var (
@@ -22,6 +20,7 @@ var (
 	replaces          []string
 )
 
+// generateCmd defines the command to generate the pool and related files.
 var generateCmd = &cobra.Command{
 	Use:   "generate PROJECT_DIR",
 	Short: "Generate the source code of the model pool",
@@ -32,7 +31,8 @@ This command also:
 This command must be rerun after each source code modification, including module import.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) < 1 {
-			log.Error("You must specify the project directory")
+			fmt.Println("You must specify the project directory")
+			return
 		}
 		runGenerate(args[0])
 	},
@@ -40,135 +40,174 @@ This command must be rerun after each source code modification, including module
 
 func init() {
 	HexyaCmd.AddCommand(generateCmd)
-	generateCmd.Flags().BoolVarP(&testEnabled, "test", "t", false, "Generate pool for testing a module. When set, projectDir must be the source directory of the module.")
-	generateCmd.Flags().BoolVar(&generateEmptyPool, "empty", false, "Generate an empty pool package and return. When set, resource dir and main.go are untouched.")
+	generateCmd.Flags().BoolVarP(&testEnabled, "test", "t", false, "Generate pool for testing a module.")
+	generateCmd.Flags().BoolVar(&generateEmptyPool, "empty", false, "Generate an empty pool package and return.")
 	generateCmd.Flags().StringSliceVar(&replaces, "replace", []string{}, "Custom replace directives for go.mod files")
 }
 
 func runGenerate(projectDir string) {
 	fmt.Println("Hexya Generate\n--------------")
 
-	// Step 1: Load all templates
-	fmt.Print("1/9 - Loading templates... ")
-	if err := templates.LoadTemplates(); err != nil {
-		log.Error(fmt.Sprintf("Error loading templates: %v", err))
+	if err := loadTemplates(); err != nil {
+		fmt.Printf("Error in loading templates: %v\n", err)
+		return
 	}
-	fmt.Println("Ok")
 
-	// Step 2: Compute project and pool directories
-	fmt.Print("2/9 - Computing directories... ")
-	projectDir, poolDir, err := file_operations.ComputeDirs(projectDir)
-	if err != nil {
-		log.Error(fmt.Sprintf("Error computing directories: %v", err))
-	}
-	fmt.Printf("Project directory: %s\nPool directory: %s\n", projectDir, poolDir)
-	fmt.Println("Ok")
+	projectDir, poolDir := computeDirectories(projectDir)
 
-	// Step 3: Clean and prepare Pool Directory
-	fmt.Print("3/9 - Preparing pool directory... ")
-	if err := file_operations.CleanPoolDir(poolDir); err != nil {
-		log.Error(fmt.Sprintf("Error cleaning pool directory: %v", err))
+	if err := preparePoolDirectory(poolDir); err != nil {
+		fmt.Printf("Error in preparing pool directory: %v\n", err)
+		return
 	}
-	if err := file_operations.CreateEmptyPool(poolDir); err != nil {
-		log.Error(fmt.Sprintf("Error creating empty pool structure: %v", err))
-	}
-	fmt.Println("Ok")
 
-	// Early exit if empty pool is requested
 	if generateEmptyPool {
 		fmt.Println("Empty pool generated successfully")
 		return
 	}
 
-	// Step 4: Create Go Mod Files
+	modulesToml := getModulesList(projectDir)
+
+	if err := createGoModFiles(poolDir, projectDir, modulesToml); err != nil {
+		fmt.Printf("Error in creating go.mod files: %v\n", err)
+		return
+	}
+
+	packs := loadProgramPackages(modulesToml)
+
+	mods, err := utils.GetModulePackages(packs)
+	if err != nil {
+		fmt.Printf("Error in getting module packages: %v\n", err)
+		return
+	}
+
+	if err := createSymlinks(mods, projectDir); err != nil {
+		fmt.Printf("Error in generating symlinks: %v\n", err)
+		return
+	}
+
+	if err := generatePoolFiles(packs, poolDir); err != nil {
+		fmt.Printf("Error in generating pool files: %v\n", err)
+		return
+	}
+
+	if err := verifyGeneratedCode(replaces, testEnabled); err != nil {
+		fmt.Printf("Error in verifying generated code: %v\n", err)
+		return
+	}
+
+	if err := createMainFile(projectDir, modulesToml); err != nil {
+		fmt.Printf("Error in creating main.go: %v\n", err)
+		return
+	}
+
+	if err := tidyGoModFiles(projectDir, poolDir); err != nil {
+		fmt.Printf("Error in tidying go.mod files: %v\n", err)
+		return
+	}
+
+	fmt.Println("Pool generated successfully")
+}
+
+func loadTemplates() error {
+	fmt.Print("1/9 - Loading templates... ")
+	if err := templates.LoadTemplates(); err != nil {
+		return err
+	}
+	fmt.Println("Ok")
+	return nil
+}
+
+func computeDirectories(projectDir string) (string, string) {
+	fmt.Print("2/9 - Computing directories... ")
+	projectDir, poolDir, err := file_operations.ComputeDirs(projectDir)
+	if err != nil {
+		fmt.Printf("Error computing directories: %v\n", err)
+	}
+	fmt.Printf("Project directory: %s\nPool directory: %s\n", projectDir, poolDir)
+	fmt.Println("Ok")
+	return projectDir, poolDir
+}
+
+func preparePoolDirectory(poolDir string) error {
+	fmt.Print("3/9 - Preparing pool directory... ")
+	if err := file_operations.CleanPoolDir(poolDir); err != nil {
+		return err
+	}
+	if err := file_operations.CreateEmptyPool(poolDir); err != nil {
+		return err
+	}
+	fmt.Println("Ok")
+	return nil
+}
+
+func getModulesList(projectDir string) []string {
+	if testEnabled {
+		return []string{projectDir}
+	}
+	return viper.GetStringSlice("Modules")
+}
+
+func createGoModFiles(poolDir, projectDir string, modulesToml []string) error {
 	fmt.Print("4/9 - Creating go.mod files... ")
 	replacesToml := viper.GetStringSlice("Replaces")
 	if len(replaces) > 0 {
 		replacesToml = replaces
 	}
-	var modulesToml []string
-	if testEnabled {
-		modulesToml = []string{projectDir}
-	} else {
-		modulesToml = viper.GetStringSlice("Modules")
-	}
-	fmt.Printf("Target paths: %v\n", modulesToml)
-	fmt.Print("Custom replaces: ", replacesToml)
-	// Copy modules into addons list
-	addonsList := make([]string, len(modulesToml))
-	copy(addonsList, modulesToml)
-	if err := gomod.CreateGoModFiles(poolDir, projectDir, replacesToml, addonsList); err != nil {
-		log.Error(fmt.Sprintf("Error creating go.mod files: %v", err))
-	}
-	fmt.Println("Ok")
+	fmt.Printf("Target paths: %v\nCustom replaces: %v\n", modulesToml, replacesToml)
+	return gomod.CreateGoModFiles(poolDir, projectDir, replacesToml, modulesToml)
+}
 
-	// Step 5: Load all Program Packages (core and addon together)
+func loadProgramPackages(modulesToml []string) []*packages.Package {
 	fmt.Print("5/9 - Loading all program packages... ")
 	fmt.Printf("Modules paths: %+v\n", modulesToml)
 	packs, err := file_operations.LoadProgram(modulesToml, testEnabled)
 	if err != nil {
-		log.Error(fmt.Sprintf("Error loading program packages: %v", err))
+		fmt.Printf("Error loading program packages: %v\n", err)
 	}
+	fmt.Println("Ok")
+	return packs
+}
 
-	// Step 6: Process all modules (core and addons)
-	fmt.Println("Program packages loaded successfully. Identifying modules...")
-	fmt.Printf("Packages loaded: %+v\n", packs)
-	modules, err := utils.GetModulePackages(packs)
-	if err != nil {
-		log.Error(fmt.Sprintf("Error identifying modules: %v", err))
-	}
-
-	fmt.Printf("Modules identified: %d\n", len(modules))
-
-	// Step 7: Generate Symlinks for Resources
-	fmt.Print("7/9 - Generating symlinks for resources... ")
-	fmt.Println("Modules paths:")
-	fmt.Println(" -", strings.Join(modulesToml, "\n - "))
-
+func createSymlinks(modules []*models.ModuleInfo, projectDir string) error {
 	file_operations.CleanModuleSymlinks(projectDir)
-	file_operations.CreateModuleSymlinks(modules, projectDir)
-	fmt.Println("Ok")
-
-	// Step 8: Generate Pool Files (for all modules)
-	fmt.Print("8/9 - Generating pool files... ")
-
-	// Gather AST data for all models (core and addons)
-	modelsASTData := parser.GetModelsASTData(modules, true)
-	if len(modelsASTData) == 0 {
-		log.Error("[ERROR] No valid models found for pool generation.")
+	for _, m := range modules {
+		// Create symlinks for all modules
+		if err := file_operations.CreateModuleSymlinks(m, projectDir); err != nil {
+			return err
+		}
 	}
+	return nil
+}
 
-	// Generate pool for all modules at once
-	if err := generate.CreatePool(modelsASTData, poolDir); err != nil {
-		log.Error(fmt.Sprintf("Error generating pool: %v", err))
+func generatePoolFiles(packs []*packages.Package, poolDir string) error {
+	fmt.Print("7/9 - Generating pool files... ")
+	if err := generate.CreatePool(packs, poolDir); err != nil {
+		return err
 	}
 	fmt.Println("Ok")
+	return nil
+}
 
-	// Step 9: Verify Generated Code by Reloading
-	fmt.Print("9/9 - Verifying generated code... ")
-	_, err = file_operations.LoadProgram(replaces, testEnabled)
+func verifyGeneratedCode(replaces []string, testEnabled bool) error {
+	fmt.Print("8/9 - Verifying generated code... ")
+	_, err := file_operations.LoadProgram(replaces, testEnabled)
 	if err != nil {
-		log.Error(fmt.Sprintf("Generated code verification failed: %v", err))
+		return err
 	}
 	fmt.Println("Ok")
+	return nil
+}
 
-	// Final Step: Generate `main.go` File
-	fmt.Print("Finalizing main.go file... ")
+func createMainFile(projectDir string, modulesToml []string) error {
+	fmt.Print("9/9 - Finalizing main.go file... ")
 	coreImports, moduleImports := models.GatherCoreAndModuleImports(modulesToml)
-	if err := file_operations.CreateMainFile(projectDir, coreImports, moduleImports, filepath.Base(projectDir)); err != nil {
-		log.Error(fmt.Sprintf("Error generating main.go: %v", err))
-	}
-	fmt.Println("Ok")
+	return file_operations.CreateMainFile(projectDir, coreImports, moduleImports, filepath.Base(projectDir))
+}
 
-	// Final Cleanup Step: Run `go mod tidy`
+func tidyGoModFiles(projectDir, poolDir string) error {
 	fmt.Print("Finalizing go.mod files... ")
 	if err := gomod.TidyGoMod(projectDir); err != nil {
-		log.Error(fmt.Sprintf("Error running go mod tidy for project directory: %v", err))
+		return err
 	}
-	if err := gomod.TidyGoMod(poolDir); err != nil {
-		log.Error(fmt.Sprintf("Error running go mod tidy for pool directory: %v", err))
-	}
-	fmt.Println("Ok")
-
-	fmt.Println("Pool generated successfully")
+	return gomod.TidyGoMod(poolDir)
 }
