@@ -89,13 +89,12 @@ func (m *ModelData) InflateEmbeds() {
 }
 
 func (m *ModelData) collectImports(imports map[string]bool) {
-	// Collect imports from fields
 	for _, field := range m.Fields {
 		if field.Type.ImportPath != "" {
+			fmt.Printf("Adding field import: %s\n", field.Type.ImportPath)
 			imports[field.Type.ImportPath] = true
 		}
 	}
-
 	// Collect imports from methods
 	for _, method := range m.Methods {
 		for _, imp := range method.GetImportPaths() {
@@ -128,7 +127,10 @@ func (m *ModelData) GetFields() []FieldData {
 	}
 	var result []FieldData
 	for _, field := range m.Fields {
-		result = append(result, field.ToFieldData())
+		fieldData := field.ToFieldData()
+		if fieldData.Name == "" {
+			result = append(result, fieldData)
+		}
 	}
 	m.ProcessedFields = result // Cache the result.
 	return result
@@ -145,4 +147,14 @@ func (m *ModelData) GetMethods() []MethodData {
 	}
 	m.ProcessedMethods = result // Cache the result.
 	return result
+}
+
+// ToMethodData converts MethodAST into MethodData for processing or generation.
+func (m *MethodAST) ToMethodData() MethodData {
+	return MethodData{
+		Name:        m.Name,
+		Params:      formatParams(m.Params),
+		Returns:     formatReturns(m.Returns),
+		ImportPaths: getImportPathsFromDependencies(m.Dependencies),
+	}
 }

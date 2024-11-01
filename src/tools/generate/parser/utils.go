@@ -96,31 +96,6 @@ func extractModelNameFromFunc(ce *ast.CallExpr) (string, error) {
 	return "", fmt.Errorf("unparsable function call")
 }
 
-// parseStringValue returns the string value of an AST expression, handling both literals and identifiers.
-func parseStringValue(expr ast.Expr) string {
-	var str string
-	switch v := expr.(type) {
-	case *ast.BasicLit:
-		// For string literals, return the value directly.
-		str = v.Value
-	case *ast.Ident:
-		// For identifiers, return the value from the declaration.
-		str = parseStringValue(v.Obj.Decl.(*ast.ValueSpec).Values[0])
-	}
-	return strings.Trim(str, "\"`")
-}
-
-// Helper function to extract the import path from an expression.
-func getImportPath(expr ast.Expr) string {
-	switch x := expr.(type) {
-	case *ast.Ident:
-		return x.Name
-	case *ast.SelectorExpr:
-		return getImportPath(x.X) + "." + x.Sel.Name
-	}
-	return ""
-}
-
 // Helper function to extract the type of parameter or return value as a string.
 func getTypeString(expr ast.Expr) string {
 	switch t := expr.(type) {

@@ -1,80 +1,64 @@
 package builders
 
 import (
+	"fmt"
 	"github.com/hexya-erp/hexya/src/tools/generate/models"
 	"strings"
 )
 
-// AddMethodsToModelData populates the methods from the model's AST into ModelData.
-func AddMethodsToModelData(modelData *models.ModelData) {
-	for _, methodAST := range modelData.Methods {
-		processMethod(methodAST, modelData)
+// AddMethodsToModelData processes methods from ModelASTData and populates ModelData.
+func AddMethodsToModelData(modelASTData *models.ModelData, modelData *models.ModelData, depsMap *map[string]bool) {
+	for _, methodAST := range modelASTData.Methods {
+		processMethod(methodAST, modelData, depsMap)
 	}
 }
 
-// processMethod processes each MethodAST into MethodData and adds it to the ModelData.
-func processMethod(methodAST *models.MethodAST, modelData *models.ModelData) {
-	// Gather import paths for method parameters and return types.
-	importPaths := gatherImportPathsFromMethod(methodAST)
+// processMethod processes each MethodAST into MethodData and appends it to ModelData.
+func processMethod(methodAST *models.MethodAST, modelData *models.ModelData, depsMap *map[string]bool) {
+	var params, paramsWithType, returnAsserts, returnString string
 
-	// Construct MethodData from MethodAST.
-	methodData := models.MethodData{
-		Name:        methodAST.Name,
-		Params:      formatParams(methodAST.Params),
-		Returns:     formatReturns(methodAST.Returns),
-		ImportPaths: removeDuplicateImportPaths(importPaths),
-		Source:      "local", // Assuming all methods are local unless specified otherwise.
-	}
-
-	// Append the constructed MethodData to the model's method list.
-	modelData.ProcessedMethods = append(modelData.ProcessedMethods, methodData)
-}
-
-// gatherImportPathsFromMethod collects import paths from method parameters and return types.
-func gatherImportPathsFromMethod(methodAST *models.MethodAST) []string {
-	var importPaths []string
+	// Generate parameters for method
 	for _, param := range methodAST.Params {
-		if param.Type.ImportPath != "" {
-			importPaths = append(importPaths, param.Type.ImportPath)
-		}
-	}
-	for _, ret := range methodAST.Returns {
-		if ret.Type.ImportPath != "" {
-			importPaths = append(importPaths, ret.Type.ImportPath)
-		}
-	}
-	return removeDuplicateImportPaths(importPaths)
-}
-
-// formatParams formats method parameters into a string for use in MethodData.
-func formatParams(params []models.ParamAST) string {
-	var formattedParams []string
-	for _, param := range params {
-		paramStr := param.Name + " " + param.Type.TypeName
+		paramType := param.Type.TypeName
 		if param.IsVariadic {
-			paramStr = "..." + paramStr
+			paramType = "..." + paramType
 		}
-		formattedParams = append(formattedParams, paramStr)
+		params += param.Name + ","
+		paramsWithType += fmt.Sprintf("%s %s,", param.Name, paramType)
+		(*depsMap)[param.Type.ImportPath] = true
 	}
-	return strings.Join(formattedParams, ", ")
+
+	// Process returns with logic for single and multiple return values
+	if len(methodAST.Returns) == 1 {
+		returnType := methodAST.Returns[0].Type.TypeName
+		returnAsserts = fmt.Sprintf("resTyped, _ := res.(%s)", returnType)
+		returnString = returnType
+		(*depsMap)[methodAST.Returns[0].Type.ImportPath] = true
+	} else if len(methodAST.Returns) > 1 {
+		for i, ret := range methodAST.Returns {
+			retType := ret.Type.TypeName
+			returnAsserts += fmt.Sprintf("resTyped%d, _ := res[%d].(%s)\n", i, i, retType)
+			returnString += retType + ","
+			(*depsMap)[ret.ImportPath] = true
+		}
+		returnString = strings.TrimRight(returnString, ",")
+	}
+
+	// Append method data to modelData.ProcessedMethods
+	modelData.ProcessedMethods = append(modelData.ProcessedMethods, models.MethodData{
+		Name:        methodAST.Name,
+		Params:      strings.TrimRight(params, ","),
+		Returns:     returnString,
+		ImportPaths: removeDuplicateImportPaths(*depsMap),
+		Source:      "local",
+	})
 }
 
-// formatReturns formats method return types into a string for use in MethodData.
-func formatReturns(returns []models.ReturnAST) string {
-	var formattedReturns []string
-	for _, ret := range returns {
-		formattedReturns = append(formattedReturns, ret.Type.TypeName)
-	}
-	return strings.Join(formattedReturns, ", ")
-}
-
-// removeDuplicateImportPaths removes duplicate import paths from the list.
-func removeDuplicateImportPaths(importPaths []string) []string {
-	seen := make(map[string]bool)
-	var uniquePaths []string
-	for _, path := range importPaths {
-		if !seen[path] {
-			seen[path] = true
+// Helper function to remove duplicate import paths
+func removeDuplicateImportPaths(importPaths map[string]bool) []string {
+	uniquePaths := make([]string, 0, len(importPaths))
+	for path := range importPaths {
+		if path != "" {
 			uniquePaths = append(uniquePaths, path)
 		}
 	}

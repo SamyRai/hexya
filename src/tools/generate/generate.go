@@ -2,34 +2,39 @@ package generate
 
 import (
 	"fmt"
+	"github.com/hexya-erp/hexya/src/tools/generate/builders"
 	"github.com/hexya-erp/hexya/src/tools/generate/generators"
 	"github.com/hexya-erp/hexya/src/tools/generate/models"
 	"github.com/hexya-erp/hexya/src/tools/generate/parser"
-	"golang.org/x/tools/go/packages"
 )
 
-// Pool handles the generation of models based on parsed data.
-func Pool(modelsData map[string]*models.ModelData, dir string) error {
+// Pool processes and generates model data based on parsed model information.
+func Pool(modelDataMap map[string]*models.ModelData, outputDir string) error {
 	fmt.Println("Starting generation phase...")
 
-	// Inflate models (add mixins, embedded models)
+	// Inflate models by adding mixins and embedded models
 	fmt.Println("Inflating models (mixins and embedded models)...")
-	models.InflateModels(modelsData)
+	models.InflateModels(modelDataMap)
 
-	// Process predefined mixins
+	// Process predefined mixins if applicable
 	fmt.Println("Processing predefined mixins...")
-	if err := generators.ProcessPredefinedMixins(modelsData, dir); err != nil {
+	if err := generators.ProcessPredefinedMixins(modelDataMap, outputDir); err != nil {
 		return err
 	}
 
-	// Process each validated model
-	for modelName, modelData := range modelsData {
-		if !modelData.Validated {
-			fmt.Printf("Skipping unvalidated model: %s\n", modelName)
-			continue
-		}
-		fmt.Printf("Processing validated model: %s\n", modelName)
-		if err := generators.ProcessModel(modelName, modelData, dir); err != nil {
+	// Process each model in the model data map
+	for modelName, modelData := range modelDataMap {
+		fmt.Printf("Processing model: %s\n", modelName)
+
+		// Initialize a map to store dependencies for the current model
+		dependencyMap := make(map[string]bool)
+
+		// Populate fields and methods for the model data
+		builders.AddFieldsToModelData(modelData)
+		builders.AddMethodsToModelData(modelData, modelData, &dependencyMap)
+
+		// Generate code for the processed model
+		if err := generators.ProcessModel(modelName, modelData, outputDir); err != nil {
 			return err
 		}
 	}
@@ -38,19 +43,17 @@ func Pool(modelsData map[string]*models.ModelData, dir string) error {
 	return nil
 }
 
-// CreatePool orchestrates the entire pool creation process by first parsing and then generating the pool.
-func CreatePool(packs []*packages.Package, dir string) error {
-	// Convert packages to ModuleInfo objects
-	modules := models.ConvertPackagesToModules(packs)
+// CreatePool orchestrates the parsing and generation phases to create the pool.
+func CreatePool(moduleInfoList []*models.ModuleInfo, outputDir string) error {
 
-	// Phase 1: Parsing
-	modelsData := parser.GetModelsASTDataForModules(modules, true) // You can choose whether to validate or not
+	// Phase 1: Retrieve initial AST data with mixins/embedded models
+	initialASTData := parser.GetModelsASTDataForModules(moduleInfoList, true)
 
-	// Parse models
-	modelsData = parser.ParseModels(packs, true)
+	// Phase 2: Convert AST data into fully populated model data structures
+	modelDataMap := parser.ParseModels(initialASTData)
 
-	// Phase 2: Generation
-	if err := Pool(modelsData, dir); err != nil {
+	// Phase 3: Generate code based on the parsed model data
+	if err := Pool(modelDataMap, outputDir); err != nil {
 		return err
 	}
 

@@ -16,7 +16,7 @@ func AddFieldsToModelData(modelData *models.ModelData) {
 func buildFieldData(fieldAST *models.FieldAST) models.FieldData {
 	return models.FieldData{
 		Name:       fieldAST.Name,
-		Type:       fieldAST.Type.TypeName,
+		Type:       fieldAST.Type,
 		IsRS:       fieldAST.RelationModel != nil,
 		RelModel:   getRelModelName(fieldAST),
 		ImportPath: fieldAST.Type.ImportPath,

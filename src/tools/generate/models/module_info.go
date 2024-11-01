@@ -26,21 +26,6 @@ const (
 	Models
 )
 
-// ConvertPackagesToModules converts a list of *packages.Package to a list of *models.ModuleInfo.
-func ConvertPackagesToModules(packages []*packages.Package) []*ModuleInfo {
-	modules := make([]*ModuleInfo, len(packages))
-	for i, pkg := range packages {
-		modules[i] = &ModuleInfo{
-			Package: *pkg,
-			FSet:    pkg.Fset,
-			Syntax:  pkg.Syntax, // Adding the AST files from the loaded package
-		}
-	}
-	return modules
-}
-
-// GatherImportsFromModules gathers the necessary import paths from the provided modules.
-
 // GatherCoreAndModuleImports splits core imports from module imports.
 func GatherCoreAndModuleImports(modules []string) (coreImports []string, moduleImports []string) {
 	// Core imports

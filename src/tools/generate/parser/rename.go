@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"github.com/hexya-erp/hexya/src/models/fieldtype"
 	"github.com/hexya-erp/hexya/src/tools/generate/models"
 	"go/ast"
@@ -8,30 +9,31 @@ import (
 	"strings"
 )
 
-// GetModelsASTDataForModules extracts models' AST data for the given modules, inflates mixins and embeds if needed.
-func GetModelsASTDataForModules(modInfos []*models.ModuleInfo, validate bool) map[string]*models.ModelData {
-	modelsData := make(map[string]*models.ModelData)
+// GetModelsASTDataForModules extracts AST data for given modules, with mixin and embed inflation if needed.
+func GetModelsASTDataForModules(moduleInfos []*models.ModuleInfo, validate bool) map[string]*models.ModelData {
+	modelASTDataMap := make(map[string]*models.ModelData)
 
-	for _, modInfo := range modInfos {
-		for _, file := range modInfo.Syntax {
-			ast.Inspect(file, func(n ast.Node) bool {
-				switch node := n.(type) {
+	for _, moduleInfo := range moduleInfos {
+		for _, file := range moduleInfo.Syntax {
+			ast.Inspect(file, func(node ast.Node) bool {
+				switch n := node.(type) {
 				case *ast.CallExpr:
-					fnctName, err := ExtractFunctionName(node)
+					funcName, err := ExtractFunctionName(n)
 					if err != nil {
+						fmt.Printf("Failed to extract function name: %v\n", err)
 						return true
 					}
-					switch fnctName {
+					switch funcName {
 					case "addMethod":
-						parseAddMethod(node, &modelsData, false)
+						parseAddMethod(n, &modelASTDataMap)
 					case "NewMethod":
-						parseAddMethod(node, &modelsData, true)
+						parseAddMethod(n, &modelASTDataMap)
 					case "InheritModel":
-						parseMixInModel(node, &modelsData)
+						parseMixinModel(n, &modelASTDataMap)
 					case "AddFields":
-						parseAddFields(node, &modelsData)
+						parseAddFields(n, &modelASTDataMap)
 					case "NewModel", "NewMixinModel", "NewTransientModel":
-						parseNewModel(node, &modelsData)
+						parseNewModel(n, &modelASTDataMap)
 					}
 				}
 				return true
@@ -40,31 +42,30 @@ func GetModelsASTDataForModules(modInfos []*models.ModuleInfo, validate bool) ma
 	}
 
 	if !validate {
-		// Skip validation if not required
-		return modelsData
+		return modelASTDataMap
 	}
 
 	// Validate models and inflate mixins and embedded fields/methods
-	for modelName := range modelsData {
-		if !modelsData[modelName].Validated {
-			delete(modelsData, modelName)
+	for modelName := range modelASTDataMap {
+		if !modelASTDataMap[modelName].Validated {
+			delete(modelASTDataMap, modelName)
 		}
-		inflateMixinsForAST(modelName, modelsData)
-		inflateEmbedsForAST(modelName, modelsData)
+		inflateMixinsForAST(modelName, modelASTDataMap)
+		inflateEmbedsForAST(modelName, modelASTDataMap)
 	}
 
-	return modelsData
+	return modelASTDataMap
 }
 
-// parseAddFields parses the given node which is an AddFields function
-func parseAddFields(node *ast.CallExpr, modelsData *map[string]*models.ModelData) {
+// parseAddFields processes AddFields functions in the AST node.
+func parseAddFields(node *ast.CallExpr, modelASTDataMap *map[string]*models.ModelData) {
 	modelName, err := extractModel(node.Fun.(*ast.SelectorExpr).X)
 	if err != nil {
-		log.Panic("Unable to extract model while visiting AST", "error", err)
+		log.Panic("Error extracting model name", err)
 	}
 
-	if _, exists := (*modelsData)[modelName]; !exists {
-		(*modelsData)[modelName] = &models.ModelData{Name: modelName}
+	if _, exists := (*modelASTDataMap)[modelName]; !exists {
+		(*modelASTDataMap)[modelName] = &models.ModelData{Name: modelName}
 	}
 
 	var fields *ast.CompositeLit
@@ -76,54 +77,37 @@ func parseAddFields(node *ast.CallExpr, modelsData *map[string]*models.ModelData
 	}
 
 	for _, f := range fields.Elts {
-		fDef := f.(*ast.KeyValueExpr)
-		fieldName := strings.Trim(fDef.Key.(*ast.BasicLit).Value, "\"`")
-		var typeStr string
+		fieldExpr := f.(*ast.KeyValueExpr)
+		fieldName := strings.Trim(fieldExpr.Key.(*ast.BasicLit).Value, "\"`")
+		fieldTypeStr := extractFieldType(fieldExpr.Value.(*ast.CompositeLit).Type)
 
-		switch ft := fDef.Value.(*ast.CompositeLit).Type.(type) {
-		case *ast.Ident:
-			typeStr = strings.TrimSuffix(ft.Name, "Field")
-		case *ast.SelectorExpr:
-			typeStr = strings.TrimSuffix(ft.Sel.Name, "Field")
-		}
-
-		//var fieldParams []ast.Expr
-		//switch fd := fDef.Value.(type) {
-		//case *ast.Ident:
-		//	fieldParams = fd.Obj.Decl.(*ast.CompositeLit).Elts
-		//case *ast.CompositeLit:
-		//	fieldParams = fd.Elts
-		//}
-
-		fType := fieldtype.Type(strings.ToLower(typeStr))
-		fData := models.FieldAST{
+		fieldType := fieldtype.Type(strings.ToLower(fieldTypeStr))
+		fieldData := models.FieldAST{
 			Name: fieldName,
 			Type: models.TypeAST{
-				TypeName:    fType.DefaultGoType().String(),
+				TypeName:    fieldType.DefaultGoType().String(),
 				ImportPath:  "",
 				IsRecordSet: false,
 			},
 		}
 
-		(*modelsData)[modelName].Fields = append((*modelsData)[modelName].Fields, &fData)
+		(*modelASTDataMap)[modelName].Fields = append((*modelASTDataMap)[modelName].Fields, &fieldData)
 	}
 }
 
-// parseAddMethod parses the given node which is an addMethod function.
-func parseAddMethod(node *ast.CallExpr, modelsData *map[string]*models.ModelData, toDeclare bool) {
+// parseAddMethod parses AST nodes for addMethod function calls.
+func parseAddMethod(node *ast.CallExpr, modelASTDataMap *map[string]*models.ModelData) {
 	modelName, err := extractModel(node.Fun.(*ast.SelectorExpr).X)
 	if err != nil {
-		log.Panicf("Unable to extract model: %v", err)
+		log.Panicf("Error extracting model: %v", err)
 	}
 	methodName := strings.Trim(node.Args[0].(*ast.BasicLit).Value, "\"`")
 
-	// Check if the second argument is a function literal (*ast.FuncLit)
 	var funcType *ast.FuncType
 	switch t := node.Args[1].(type) {
 	case *ast.FuncLit:
 		funcType = t.Type
 	case *ast.Ident:
-		// Handle case when it's an identifier
 		if decl, ok := t.Obj.Decl.(*ast.FuncDecl); ok {
 			funcType = decl.Type
 		} else {
@@ -135,62 +119,78 @@ func parseAddMethod(node *ast.CallExpr, modelsData *map[string]*models.ModelData
 
 	methodData := &models.MethodAST{
 		Name:    methodName,
-		Params:  extractParams(funcType),     // Custom function to extract method parameters
-		Returns: extractReturnType(funcType), // Custom function to extract method returns
+		Params:  extractParams(funcType),
+		Returns: extractReturnType(funcType),
 	}
 
-	if _, exists := (*modelsData)[modelName]; !exists {
-		(*modelsData)[modelName] = &models.ModelData{Name: modelName}
+	if _, exists := (*modelASTDataMap)[modelName]; !exists {
+		(*modelASTDataMap)[modelName] = &models.ModelData{Name: modelName}
 	}
-	(*modelsData)[modelName].Methods = append((*modelsData)[modelName].Methods, methodData)
+	(*modelASTDataMap)[modelName].Methods = append((*modelASTDataMap)[modelName].Methods, methodData)
 }
 
-// parseNewModel parses the given node which is a NewModel function.
-func parseNewModel(node *ast.CallExpr, modelsData *map[string]*models.ModelData) {
+// parseNewModel processes AST nodes for NewModel functions.
+func parseNewModel(node *ast.CallExpr, modelASTDataMap *map[string]*models.ModelData) {
 	modelName := strings.Trim(node.Args[0].(*ast.BasicLit).Value, "\"`")
+	modelType := getModelTypeFromFunc(node.Fun)
 
-	var modelType string
-	switch fun := node.Fun.(type) {
-	case *ast.Ident:
-		modelType = strings.TrimSuffix(strings.TrimPrefix(fun.Name, "New"), "Model")
-	case *ast.SelectorExpr:
-		modelType = strings.TrimSuffix(strings.TrimPrefix(fun.Sel.Name, "New"), "Model")
-	default:
-		log.Panicf("Unexpected function type for NewModel: %T", fun)
-	}
-
-	if _, exists := (*modelsData)[modelName]; !exists {
-		(*modelsData)[modelName] = &models.ModelData{Name: modelName, ModelType: modelType}
+	if _, exists := (*modelASTDataMap)[modelName]; !exists {
+		(*modelASTDataMap)[modelName] = &models.ModelData{Name: modelName, ModelType: modelType}
 	}
 }
 
-// parseMixInModel updates the mixin tree with the given node which is an InheritModel function.
-func parseMixInModel(node *ast.CallExpr, modelsData *map[string]*models.ModelData) {
-	modelName, err := extractModel(node.Fun.(*ast.SelectorExpr).X)
+// parseMixinModel handles mixin relationships in the AST data.
+// parseMixinModel updates the mixin tree with the given node which is an InheritModel function.
+func parseMixinModel(node *ast.CallExpr, modInfo *models.ModuleInfo, modelsData *map[string]*models.ModelData) {
+	fNode := node.Fun.(*ast.SelectorExpr)
+	modelName, err := extractModel(fNode.X, modInfo)
 	if err != nil {
-		log.Panic("Unable to extract model", err)
+		// Check if it's a General Mixin Error, skip if true
+		if _, ok := err.(generalMixinError); ok {
+			fmt.Printf("Skipping general mixin error for model: %s\n", modelName)
+			return
+		}
+		// Log and continue for other errors without stopping execution
+		fmt.Printf("Error extracting model: %v\n", err)
+		return
 	}
-	mixinModel, err := extractModel(node.Args[0])
+
+	mixinModelName, err := extractModel(node.Args[0], modInfo)
 	if err != nil {
-		log.Panic("Unable to extract mixin model", err)
+		fmt.Printf("Unable to extract mixin model: %v\n", err)
+		return
 	}
+
 	if _, exists := (*modelsData)[modelName]; !exists {
 		(*modelsData)[modelName] = &models.ModelData{Name: modelName}
 	}
-	(*modelsData)[modelName].Mixins = append((*modelsData)[modelName].Mixins, &models.ModelData{Name: mixinModel})
+	(*modelsData)[modelName].Mixins = append((*modelsData)[modelName].Mixins, &models.ModelData{Name: mixinModelName})
 }
+
+// extractFieldType determines the field type from a given AST expression node.
+func extractFieldType(expr ast.Expr) string {
+	switch fieldType := expr.(type) {
+	case *ast.Ident:
+		return strings.TrimSuffix(fieldType.Name, "Field")
+	case *ast.SelectorExpr:
+		return strings.TrimSuffix(fieldType.Sel.Name, "Field")
+	default:
+		return ""
+	}
+}
+
+// Additional helper functions for extracting and processing AST nodes.
 
 func extractParams(funcType *ast.FuncType) []models.ParamAST {
 	var params []models.ParamAST
 	for _, param := range funcType.Params.List {
 		for _, name := range param.Names {
-			paramAST := models.ParamAST{
+			params = append(params, models.ParamAST{
 				Name: name.Name,
 				Type: models.TypeAST{
 					TypeName: getTypeString(param.Type),
 				},
-			}
-			params = append(params, paramAST)
+			})
 		}
 	}
 	return params
@@ -198,20 +198,27 @@ func extractParams(funcType *ast.FuncType) []models.ParamAST {
 
 func extractReturnType(funcType *ast.FuncType) []models.ReturnAST {
 	var returns []models.ReturnAST
-
-	// Check if the function has any return types
 	if funcType.Results == nil {
-		return returns // Return an empty slice if no return types are defined
+		return returns
 	}
-
-	// Iterate over return types if they exist
 	for _, ret := range funcType.Results.List {
-		returnAST := models.ReturnAST{
+		returns = append(returns, models.ReturnAST{
 			Type: models.TypeAST{
 				TypeName: getTypeString(ret.Type),
 			},
-		}
-		returns = append(returns, returnAST)
+		})
 	}
 	return returns
+}
+
+func getModelTypeFromFunc(funNode ast.Expr) string {
+	switch fun := funNode.(type) {
+	case *ast.Ident:
+		return strings.TrimSuffix(strings.TrimPrefix(fun.Name, "New"), "Model")
+	case *ast.SelectorExpr:
+		return strings.TrimSuffix(strings.TrimPrefix(fun.Sel.Name, "New"), "Model")
+	default:
+		log.Panicf("Unexpected function type for NewModel: %T", fun)
+		return ""
+	}
 }

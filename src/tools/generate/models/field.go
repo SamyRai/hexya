@@ -1,5 +1,7 @@
 package models
 
+import "fmt"
+
 // FieldAttributes holds metadata for fields (e.g., mixin, embedded, selection).
 type FieldAttributes struct {
 	MixinField  bool              // Marks if the field is from a mixin.
@@ -31,12 +33,18 @@ type FieldAST struct {
 
 // ToFieldData converts FieldAST into FieldData for processing or code generation.
 func (f *FieldAST) ToFieldData() FieldData {
+	var relModel string
+	if f.RelationModel != nil {
+		relModel = f.RelationModel.ModelName
+	} else {
+		fmt.Printf("Warning: RelationModel is nil for field %s\n", f.Name)
+	}
 	return FieldData{
 		Name:       f.Name,
-		Type:       f.Type.TypeName,
+		Type:       f.Type,
 		ImportPath: f.Type.ImportPath,
 		IsRS:       f.RelationModel != nil,
-		RelModel:   f.RelationModel.ModelName,
+		RelModel:   relModel,
 		MixinField: f.Attributes.MixinField,
 		EmbedField: f.Attributes.EmbedField,
 	}
@@ -45,7 +53,7 @@ func (f *FieldAST) ToFieldData() FieldData {
 // FieldData is the processed representation of a model field.
 type FieldData struct {
 	Name       string
-	Type       string
+	Type       TypeAST
 	ImportPath string
 	IsRS       bool
 	RelModel   string

@@ -48,59 +48,72 @@ func init() {
 func runGenerate(projectDir string) {
 	fmt.Println("Hexya Generate\n--------------")
 
+	// Step 1: Load templates
 	if err := loadTemplates(); err != nil {
 		fmt.Printf("Error in loading templates: %v\n", err)
 		return
 	}
 
-	projectDir, poolDir := computeDirectories(projectDir)
+	// Step 2: Compute directories
+	projectPath, poolPath := computeDirectories(projectDir)
 
-	if err := preparePoolDirectory(poolDir); err != nil {
+	// Step 3: Prepare the pool directory
+	if err := preparePoolDirectory(poolPath); err != nil {
 		fmt.Printf("Error in preparing pool directory: %v\n", err)
 		return
 	}
 
+	// If an empty pool is requested, stop here
 	if generateEmptyPool {
 		fmt.Println("Empty pool generated successfully")
 		return
 	}
 
-	modulesToml := getModulesList(projectDir)
+	// Step 4: Retrieve the list of modules for the project
+	modulePaths := getModulePaths(projectPath)
 
-	if err := createGoModFiles(poolDir, projectDir, modulesToml); err != nil {
+	// Step 5: Create Go modules files for dependencies
+	if err := createGoModFiles(poolPath, projectPath, modulePaths); err != nil {
 		fmt.Printf("Error in creating go.mod files: %v\n", err)
 		return
 	}
 
-	packs := loadProgramPackages(modulesToml)
+	// Step 6: Load packages of the modules
+	packages := loadProgramPackages(modulePaths)
 
-	mods, err := utils.GetModulePackages(packs)
+	// Step 7: Extract module information from packages
+	moduleInfos, err := utils.GetModulePackages(packages)
 	if err != nil {
 		fmt.Printf("Error in getting module packages: %v\n", err)
 		return
 	}
 
-	if err := createSymlinks(mods, projectDir); err != nil {
+	// Step 8: Create symbolic links for the modules
+	if err := createModuleSymlinks(moduleInfos, projectPath); err != nil {
 		fmt.Printf("Error in generating symlinks: %v\n", err)
 		return
 	}
 
-	if err := generatePoolFiles(packs, poolDir); err != nil {
+	// Step 9: Generate the pool files for models
+	if err := generatePoolFiles(moduleInfos, poolPath); err != nil {
 		fmt.Printf("Error in generating pool files: %v\n", err)
 		return
 	}
 
+	// Step 10: Verify the generated code
 	if err := verifyGeneratedCode(replaces, testEnabled); err != nil {
 		fmt.Printf("Error in verifying generated code: %v\n", err)
 		return
 	}
 
-	if err := createMainFile(projectDir, modulesToml); err != nil {
+	// Step 11: Create or update the main.go file
+	if err := createMainFile(projectPath, modulePaths); err != nil {
 		fmt.Printf("Error in creating main.go: %v\n", err)
 		return
 	}
 
-	if err := tidyGoModFiles(projectDir, poolDir); err != nil {
+	// Step 12: Tidy up go.mod files
+	if err := tidyGoModFiles(projectPath, poolPath); err != nil {
 		fmt.Printf("Error in tidying go.mod files: %v\n", err)
 		return
 	}
@@ -108,8 +121,9 @@ func runGenerate(projectDir string) {
 	fmt.Println("Pool generated successfully")
 }
 
+// loadTemplates loads necessary templates for the generation process.
 func loadTemplates() error {
-	fmt.Print("1/9 - Loading templates... ")
+	fmt.Println("1/9 - Loading templates... ")
 	if err := templates.LoadTemplates(); err != nil {
 		return err
 	}
@@ -117,50 +131,55 @@ func loadTemplates() error {
 	return nil
 }
 
+// computeDirectories calculates the project and pool directory paths.
 func computeDirectories(projectDir string) (string, string) {
-	fmt.Print("2/9 - Computing directories... ")
-	projectDir, poolDir, err := file_operations.ComputeDirs(projectDir)
+	fmt.Println("2/9 - Computing directories... ")
+	projectPath, poolPath, err := file_operations.ComputeDirs(projectDir)
 	if err != nil {
 		fmt.Printf("Error computing directories: %v\n", err)
 	}
-	fmt.Printf("Project directory: %s\nPool directory: %s\n", projectDir, poolDir)
+	fmt.Printf("Project directory: %s\nPool directory: %s\n", projectPath, poolPath)
 	fmt.Println("Ok")
-	return projectDir, poolDir
+	return projectPath, poolPath
 }
 
-func preparePoolDirectory(poolDir string) error {
-	fmt.Print("3/9 - Preparing pool directory... ")
-	if err := file_operations.CleanPoolDir(poolDir); err != nil {
+// preparePoolDirectory cleans and sets up the pool directory.
+func preparePoolDirectory(poolPath string) error {
+	fmt.Println("3/9 - Preparing pool directory... ")
+	if err := file_operations.CleanPoolDir(poolPath); err != nil {
 		return err
 	}
-	if err := file_operations.CreateEmptyPool(poolDir); err != nil {
+	if err := file_operations.CreateEmptyPool(poolPath); err != nil {
 		return err
 	}
 	fmt.Println("Ok")
 	return nil
 }
 
-func getModulesList(projectDir string) []string {
+// getModulePaths retrieves a list of modules for the project.
+func getModulePaths(projectDir string) []string {
 	if testEnabled {
 		return []string{projectDir}
 	}
 	return viper.GetStringSlice("Modules")
 }
 
-func createGoModFiles(poolDir, projectDir string, modulesToml []string) error {
-	fmt.Print("4/9 - Creating go.mod files... ")
+// createGoModFiles generates go.mod files for dependencies.
+func createGoModFiles(poolPath, projectPath string, modulePaths []string) error {
+	fmt.Println("4/9 - Creating go.mod files... ")
 	replacesToml := viper.GetStringSlice("Replaces")
 	if len(replaces) > 0 {
 		replacesToml = replaces
 	}
-	fmt.Printf("Target paths: %v\nCustom replaces: %v\n", modulesToml, replacesToml)
-	return gomod.CreateGoModFiles(poolDir, projectDir, replacesToml, modulesToml)
+	fmt.Printf("Target paths: %v\nCustom replaces: %v\n", modulePaths, replacesToml)
+	return gomod.CreateGoModFiles(poolPath, projectPath, replacesToml, modulePaths)
 }
 
-func loadProgramPackages(modulesToml []string) []*packages.Package {
-	fmt.Print("5/9 - Loading all program packages... ")
-	fmt.Printf("Modules paths: %+v\n", modulesToml)
-	packs, err := file_operations.LoadProgram(modulesToml, testEnabled)
+// loadProgramPackages loads all packages for the modules.
+func loadProgramPackages(modulePaths []string) []*packages.Package {
+	fmt.Println("5/9 - Loading all program packages... ")
+	fmt.Printf("Modules paths: %+v\n", modulePaths)
+	packs, err := file_operations.LoadProgram(modulePaths, testEnabled)
 	if err != nil {
 		fmt.Printf("Error loading program packages: %v\n", err)
 	}
@@ -168,28 +187,30 @@ func loadProgramPackages(modulesToml []string) []*packages.Package {
 	return packs
 }
 
-func createSymlinks(modules []*models.ModuleInfo, projectDir string) error {
+// createModuleSymlinks generates symlinks for modules.
+func createModuleSymlinks(moduleInfos []*models.ModuleInfo, projectDir string) error {
 	file_operations.CleanModuleSymlinks(projectDir)
-	for _, m := range modules {
-		// Create symlinks for all modules
-		if err := file_operations.CreateModuleSymlinks(m, projectDir); err != nil {
+	for _, moduleInfo := range moduleInfos {
+		if err := file_operations.CreateModuleSymlinks(moduleInfo, projectDir); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func generatePoolFiles(packs []*packages.Package, poolDir string) error {
-	fmt.Print("7/9 - Generating pool files... ")
-	if err := generate.CreatePool(packs, poolDir); err != nil {
+// generatePoolFiles generates pool files for the models.
+func generatePoolFiles(moduleInfos []*models.ModuleInfo, poolPath string) error {
+	fmt.Println("7/9 - Generating pool files... ")
+	if err := generate.CreatePool(moduleInfos, poolPath); err != nil {
 		return err
 	}
 	fmt.Println("Ok")
 	return nil
 }
 
+// verifyGeneratedCode verifies the generated code for correctness.
 func verifyGeneratedCode(replaces []string, testEnabled bool) error {
-	fmt.Print("8/9 - Verifying generated code... ")
+	fmt.Println("8/9 - Verifying generated code... ")
 	_, err := file_operations.LoadProgram(replaces, testEnabled)
 	if err != nil {
 		return err
@@ -198,16 +219,18 @@ func verifyGeneratedCode(replaces []string, testEnabled bool) error {
 	return nil
 }
 
-func createMainFile(projectDir string, modulesToml []string) error {
-	fmt.Print("9/9 - Finalizing main.go file... ")
-	coreImports, moduleImports := models.GatherCoreAndModuleImports(modulesToml)
-	return file_operations.CreateMainFile(projectDir, coreImports, moduleImports, filepath.Base(projectDir))
+// createMainFile creates or updates the main.go file for the project.
+func createMainFile(projectPath string, modulePaths []string) error {
+	fmt.Println("9/9 - Finalizing main.go file... ")
+	coreImports, moduleImports := models.GatherCoreAndModuleImports(modulePaths)
+	return file_operations.CreateMainFile(projectPath, coreImports, moduleImports, filepath.Base(projectPath))
 }
 
-func tidyGoModFiles(projectDir, poolDir string) error {
-	fmt.Print("Finalizing go.mod files... ")
-	if err := gomod.TidyGoMod(projectDir); err != nil {
+// tidyGoModFiles runs go mod tidy on specified directories.
+func tidyGoModFiles(projectPath, poolPath string) error {
+	fmt.Println("Finalizing go.mod files... ")
+	if err := gomod.TidyGoMod(projectPath); err != nil {
 		return err
 	}
-	return gomod.TidyGoMod(poolDir)
+	return gomod.TidyGoMod(poolPath)
 }
