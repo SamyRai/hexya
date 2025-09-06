@@ -5,11 +5,13 @@ package generate
 
 import (
 	"fmt"
+
+	"github.com/hexya-erp/hexya/src/tools/parser"
 )
 
 // specificMethodsHandlers are functions that populate the given modelData
 // for specific methods.
-var specificMethodsHandlers = map[string]func(astData *MethodASTData, modelData *modelData, depsMap *map[string]bool){
+var specificMethodsHandlers = map[string]func(astData *parser.MethodASTData, modelData *modelData, depsMap *map[string]bool){
 	"Search":           searchMethodHandler,
 	"SearchByName":     searchByNameMethodHandler,
 	"Create":           createMethodHandler,
@@ -27,7 +29,7 @@ var specificMethodsHandlers = map[string]func(astData *MethodASTData, modelData 
 }
 
 // searchMethodHandler returns the specific methodData for the Search method.
-func searchMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[string]bool) {
+func searchMethodHandler(astData *parser.MethodASTData, modelData *modelData, _ *map[string]bool) {
 	name := "Search"
 	iReturnString := fmt.Sprintf("%sSet", modelData.Name)
 	returnString := fmt.Sprintf("%s.%sSet", PoolInterfacesPackage, modelData.Name)
@@ -53,7 +55,7 @@ func searchMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[st
 }
 
 // createMethodHandler returns the specific methodData for the Create method.
-func createMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[string]bool) {
+func createMethodHandler(astData *parser.MethodASTData, modelData *modelData, _ *map[string]bool) {
 	name := "Create"
 	iReturnString := fmt.Sprintf("%sSet", modelData.Name)
 	returnString := fmt.Sprintf("%s.%sSet", PoolInterfacesPackage, modelData.Name)
@@ -81,7 +83,7 @@ func createMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[st
 }
 
 // newMethodHandler returns the specific methodData for the New method.
-func newMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[string]bool) {
+func newMethodHandler(astData *parser.MethodASTData, modelData *modelData, _ *map[string]bool) {
 	name := "New"
 	iReturnString := fmt.Sprintf("%sSet", modelData.Name)
 	returnString := fmt.Sprintf("%s.%sSet", PoolInterfacesPackage, modelData.Name)
@@ -109,7 +111,7 @@ func newMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[strin
 }
 
 // writeMethodHandler returns the specific methodData for the Write method.
-func writeMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[string]bool) {
+func writeMethodHandler(astData *parser.MethodASTData, modelData *modelData, _ *map[string]bool) {
 	name := "Write"
 	returnString := "bool"
 	iReturnString := "bool"
@@ -136,7 +138,7 @@ func writeMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[str
 }
 
 // copyMethodHandler returns the specific methodData for the Copy method.
-func copyMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[string]bool) {
+func copyMethodHandler(astData *parser.MethodASTData, modelData *modelData, _ *map[string]bool) {
 	name := "Copy"
 	returnString := fmt.Sprintf("%s.%sSet", PoolInterfacesPackage, modelData.Name)
 	iReturnString := fmt.Sprintf("%sSet", modelData.Name)
@@ -162,7 +164,7 @@ func copyMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[stri
 }
 
 // copyDataMethodHandler returns the specific methodData for the CopyData method.
-func copyDataMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[string]bool) {
+func copyDataMethodHandler(astData *parser.MethodASTData, modelData *modelData, _ *map[string]bool) {
 	name := "CopyData"
 	returnString := fmt.Sprintf("%s.%sData", PoolInterfacesPackage, modelData.Name)
 	iReturnString := fmt.Sprintf("%sData", modelData.Name)
@@ -188,7 +190,7 @@ func copyDataMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[
 }
 
 // searchByNameMethodHandler returns the specific methodData for the Search method.
-func searchByNameMethodHandler(astData *MethodASTData, modelData *modelData, depsMap *map[string]bool) {
+func searchByNameMethodHandler(astData *parser.MethodASTData, modelData *modelData, depsMap *map[string]bool) {
 	name := "SearchByName"
 	returnString := fmt.Sprintf("%s.%sSet", PoolInterfacesPackage, modelData.Name)
 	iReturnString := fmt.Sprintf("%sSet", modelData.Name)
@@ -221,7 +223,7 @@ func searchByNameMethodHandler(astData *MethodASTData, modelData *modelData, dep
 }
 
 // firstMethodHandler returns the specific methodData for the First method.
-func firstMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[string]bool) {
+func firstMethodHandler(astData *parser.MethodASTData, modelData *modelData, _ *map[string]bool) {
 	name := "First"
 	returnString := fmt.Sprintf("%s.%sData", PoolInterfacesPackage, modelData.Name)
 	iReturnString := fmt.Sprintf("%sData", modelData.Name)
@@ -234,7 +236,7 @@ func firstMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[str
 }
 
 // allMethodHandler returns the specific methodData for the First method.
-func allMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[string]bool) {
+func allMethodHandler(astData *parser.MethodASTData, modelData *modelData, _ *map[string]bool) {
 	name := "All"
 	returnString := fmt.Sprintf("[]%s.%sData", PoolInterfacesPackage, modelData.Name)
 	iReturnString := fmt.Sprintf("[]%sData", modelData.Name)
@@ -247,7 +249,7 @@ func allMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[strin
 }
 
 // cartesianProductMethodHandler returns the specific methodData for the CartesianProduct method.
-func cartesianProductMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[string]bool) {
+func cartesianProductMethodHandler(astData *parser.MethodASTData, modelData *modelData, _ *map[string]bool) {
 	name := "CartesianProduct"
 	returnString := fmt.Sprintf("[]%s.%sSet", PoolInterfacesPackage, modelData.Name)
 	iReturnString := fmt.Sprintf("[]%sSet", modelData.Name)
@@ -262,7 +264,7 @@ func cartesianProductMethodHandler(astData *MethodASTData, modelData *modelData,
 }
 
 // sortedMethodHandler returns the specific methodData for the Sorted method.
-func sortedMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[string]bool) {
+func sortedMethodHandler(astData *parser.MethodASTData, modelData *modelData, _ *map[string]bool) {
 	name := "Sorted"
 	returnString := fmt.Sprintf("%s.%sSet", PoolInterfacesPackage, modelData.Name)
 	iReturnString := fmt.Sprintf("%sSet", modelData.Name)
@@ -277,7 +279,7 @@ func sortedMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[st
 }
 
 // filteredMethodHandler returns the specific methodData for the Sorted method.
-func filteredMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[string]bool) {
+func filteredMethodHandler(astData *parser.MethodASTData, modelData *modelData, _ *map[string]bool) {
 	name := "Filtered"
 	returnString := fmt.Sprintf("%s.%sSet", PoolInterfacesPackage, modelData.Name)
 	iReturnString := fmt.Sprintf("%sSet", modelData.Name)
@@ -292,7 +294,7 @@ func filteredMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[
 }
 
 // aggregatesMethodHandler returns the specific methodData for the Aggregates method.
-func aggregatesMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[string]bool) {
+func aggregatesMethodHandler(astData *parser.MethodASTData, modelData *modelData, _ *map[string]bool) {
 	returnString := fmt.Sprintf("[]%s.%sGroupAggregateRow", PoolInterfacesPackage, modelData.Name)
 	modelData.AllMethods = append(modelData.AllMethods, methodData{
 		Name:             "Aggregates",
@@ -316,7 +318,7 @@ func aggregatesMethodHandler(astData *MethodASTData, modelData *modelData, _ *ma
 }
 
 // defaultGetMethodHandler returns the specific methodData for the DefaultGet method.
-func defaultGetMethodHandler(astData *MethodASTData, modelData *modelData, _ *map[string]bool) {
+func defaultGetMethodHandler(astData *parser.MethodASTData, modelData *modelData, _ *map[string]bool) {
 	name := "DefaultGet"
 	returnString := fmt.Sprintf("%s.%sData", PoolInterfacesPackage, modelData.Name)
 	iReturnString := fmt.Sprintf("%sData", modelData.Name)

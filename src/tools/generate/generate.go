@@ -1,6 +1,3 @@
-// Copyright 2017 NDP Systèmes. All Rights Reserved.
-// See LICENSE file for full licensing details.
-
 package generate
 
 import (
@@ -8,14 +5,13 @@ import (
 	"fmt"
 	"go/format"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"text/template"
 
 	"github.com/hexya-erp/hexya/src/models"
+	"github.com/hexya-erp/hexya/src/tools/parser"
 	"github.com/hexya-erp/hexya/src/tools/strutils"
 )
 
@@ -83,6 +79,14 @@ type modelData struct {
 	TypesDeps             []string
 }
 
+// A PoolData describes the whole pool
+type PoolData struct {
+	Models                []modelData
+	ModelsPackageName     string
+	QueryPackageName      string
+	InterfacesPackageName string
+}
+
 // sort sorts all slices fields of this modelData so that the generated code is always the same.
 func (m *modelData) sort() {
 	sort.Strings(m.Deps)
@@ -116,7 +120,7 @@ func createTypeIdent(typStr string) string {
 // trimInterfacePackagePrefix removes the 'm.' prefix from types
 func trimInterfacePackagePrefix(typ string) string {
 	toks := strings.Split(typ, "]")
-	lastTok := strings.TrimPrefix(toks[len(toks)-1], PoolInterfacesPackage+".")
+	lastTok := strings.TrimPrefix(toks[len(toks)-1], "m.")
 	toks = append(toks[:len(toks)-1], lastTok)
 	return strings.Join(toks, "]")
 }
@@ -124,47 +128,54 @@ func trimInterfacePackagePrefix(typ string) string {
 // CreatePool generates the pool package by parsing the source code AST
 // of the given program.
 // The generated package will be put in the given dir.
-func CreatePool(graph *ModelGraph, dir string) {
-	wg := sync.WaitGroup{}
-	wg.Add(len(graph.Nodes))
-	for _, modelNode := range graph.Nodes {
-		go func(node *ModelNode) {
-			depsMap := map[string]bool{ModelsPath: true}
-			mData := modelData{
-				Name:                  node.Name,
-				SnakeName:             strutils.SnakeCase(node.Name),
-				ModelsPackageName:     PoolModelPackage,
-				QueryPackageName:      PoolQueryPackage,
-				InterfacesPackageName: PoolInterfacesPackage,
-				ModelType:             node.ModelType,
-				IsModelMixin:          node.IsModelMixin,
-				ConditionFuncs:        []string{"And", "AndNot", "Or", "OrNot"},
-			}
-			// Add fields
-			addFieldsToModelData(node, &mData, &depsMap)
-			// Add field types
-			addFieldTypesToModelData(&mData)
-			// Add methods
-			addMethodsToModelData(graph, &mData, &depsMap)
-			// Setting imports
-			var deps []string
-			for dep := range depsMap {
-				if dep == "" {
-					continue
-				}
-				deps = append(deps, dep)
-			}
-			mData.Deps = deps
-			// Writing to file
-			createPoolFiles(dir, &mData)
-			wg.Done()
-		}(modelNode)
+func CreatePool(graph *parser.ModelGraph, dir string) {
+	poolData := PoolData{
+		ModelsPackageName:     "h",
+		QueryPackageName:      "q",
+		InterfacesPackageName: "m",
 	}
-	wg.Wait()
+	for _, modelNode := range graph.Nodes {
+		depsMap := map[string]bool{"github.com/hexya-erp/hexya/src/models": true}
+		mData := modelData{
+			Name:                  modelNode.Name,
+			SnakeName:             strutils.SnakeCase(modelNode.Name),
+			ModelsPackageName:     "h",
+			QueryPackageName:      "q",
+			InterfacesPackageName: "m",
+			ModelType:             modelNode.ModelType,
+			IsModelMixin:          modelNode.IsModelMixin,
+			ConditionFuncs:        []string{"And", "AndNot", "Or", "OrNot"},
+		}
+		// Add fields
+		addFieldsToModelData(modelNode, &mData, &depsMap)
+		// Add field types
+		addFieldTypesToModelData(&mData)
+		// Add methods
+		addMethodsToModelData(graph, &mData, &depsMap)
+		// Setting imports
+		var deps []string
+		for dep := range depsMap {
+			if dep == "" {
+				continue
+			}
+			deps = append(deps, dep)
+		}
+		mData.Deps = deps
+		poolData.Models = append(poolData.Models, mData)
+	}
+
+	// Writing to file
+	createGenericPoolFiles(dir, &poolData)
+}
+
+// createGenericPoolFiles creates the generic pool file
+func createGenericPoolFiles(dir string, pData *PoolData) {
+	fileName := filepath.Join(dir, "pool.go")
+	CreateFileFromTemplate(fileName, poolGenericTemplate, pData)
 }
 
 // addMethodsToModelData extracts data from modelsASTData to populate methods in modelData
-func addMethodsToModelData(graph *ModelGraph, modelData *modelData, depsMap *map[string]bool) {
+func addMethodsToModelData(graph *parser.ModelGraph, modelData *modelData, depsMap *map[string]bool) {
 	modelNode := graph.Nodes[modelData.Name]
 	for methodName, methodASTData := range modelNode.Methods {
 		if handler, exists := specificMethodsHandlers[methodName]; exists {
@@ -178,7 +189,7 @@ func addMethodsToModelData(graph *ModelGraph, modelData *modelData, depsMap *map
 			p := fmt.Sprintf("%s,", astParam.Name)
 			if _, ok := graph.Nodes[astParam.Type.Type]; ok {
 				iParamType = fmt.Sprintf("%sSet", modelData.Name)
-				paramType = fmt.Sprintf("%s.%sSet", PoolInterfacesPackage, modelData.Name)
+				paramType = fmt.Sprintf("m.%sSet", modelData.Name)
 			}
 			if astParam.Variadic {
 				iParamType = fmt.Sprintf("...%s", iParamType)
@@ -198,9 +209,9 @@ func addMethodsToModelData(graph *ModelGraph, modelData *modelData, depsMap *map
 			returnAsserts = fmt.Sprintf("resTyped, _ := res.(%s)", typ)
 			returns = "resTyped"
 			if _, ok := graph.Nodes[typ]; ok {
-				typ = fmt.Sprintf("%s.%sSet", PoolInterfacesPackage, modelData.Name)
+				typ = fmt.Sprintf("m.%sSet", modelData.Name)
 				iTyp = fmt.Sprintf("%sSet", modelData.Name)
-				returnAsserts = fmt.Sprintf("resTyped := res.(models.RecordSet).Collection().Wrap(\"%s\").(%s)", modelData.Name, typ)
+				returnAsserts = fmt.Sprintf("resTyped := res.(models.RecordSet).Collection().Wrap(\"%s\").(m.%sSet)", modelData.Name, modelData.Name)
 			}
 			returnString = typ
 			iReturnString = iTyp
@@ -211,9 +222,9 @@ func addMethodsToModelData(graph *ModelGraph, modelData *modelData, depsMap *map
 				call = "CallMulti"
 				(*depsMap)[ret.ImportPath] = true
 				if _, ok := graph.Nodes[ret.Type]; ok {
-					typ = fmt.Sprintf("%s.%sSet", PoolInterfacesPackage, modelData.Name)
+					typ = fmt.Sprintf("m.%sSet", modelData.Name)
 					iTyp = fmt.Sprintf("%sSet", modelData.Name)
-					returnAsserts += fmt.Sprintf("resTyped%d := res[%d].(models.RecordSet).Collection().Wrap(\"%s\").(%s)\n", i, i, modelData.Name, typ)
+					returnAsserts += fmt.Sprintf("resTyped%d := res[%d].(models.RecordSet).Collection().Wrap(\"%s\").(m.%sSet)\n", i, i, modelData.Name, modelData.Name)
 				} else {
 					returnAsserts += fmt.Sprintf("resTyped%d, _ := res[%d].(%s)\n", i, i, typ)
 				}
@@ -246,14 +257,14 @@ func addMethodsToModelData(graph *ModelGraph, modelData *modelData, depsMap *map
 }
 
 // addFieldsToModelData extracts data from a ModelNode to populate fields in modelData
-func addFieldsToModelData(node *ModelNode, modelData *modelData, depsMap *map[string]bool) {
+func addFieldsToModelData(node *parser.ModelNode, modelData *modelData, depsMap *map[string]bool) {
 	relModels := make(map[string]bool)
 	for fieldName, fieldASTData := range node.Fields {
 		typStr := fieldASTData.Type.Type
 		iTypStr := trimInterfacePackagePrefix(typStr)
 		if fieldASTData.RelModel != "" {
 			relModels[fieldASTData.RelModel] = true
-			typStr = fmt.Sprintf("%s.%sSet", PoolInterfacesPackage, fieldASTData.RelModel)
+			typStr = fmt.Sprintf("m.%sSet", fieldASTData.RelModel)
 			iTypStr = fmt.Sprintf("%sSet", fieldASTData.RelModel)
 		}
 		jsonName := strutils.GetDefaultString(fieldASTData.JSON, models.SnakeCaseFieldName(fieldName, fieldASTData.FType))
@@ -305,40 +316,6 @@ func addFieldTypesToModelData(mData *modelData) {
 		}
 		mData.TypesDeps = append(mData.TypesDeps, dep)
 	}
-}
-
-// createPoolFiles creates all pool files for the given model data
-func createPoolFiles(dir string, mData *modelData) {
-	mData.sort()
-	// create the model's interface file in interface directory (m)
-	fileName := filepath.Join(dir, PoolInterfacesPackage, fmt.Sprintf("%s.go", mData.SnakeName))
-	CreateFileFromTemplate(fileName, poolInterfacesTemplate, mData)
-
-	// create the models directories (h)
-	if _, err := os.Stat(filepath.Join(dir, PoolModelPackage, mData.SnakeName)); err != nil {
-		if err = os.MkdirAll(filepath.Join(dir, PoolModelPackage, mData.SnakeName), 0755); err != nil {
-			panic(err)
-		}
-	}
-	// create the model's file in models directory (h)
-	fileName = filepath.Join(dir, PoolModelPackage, fmt.Sprintf("%s.go", mData.SnakeName))
-	CreateFileFromTemplate(fileName, poolModelsTemplate, mData)
-	// create the model's file in model's dir (q/model)
-	fileName = filepath.Join(dir, PoolModelPackage, mData.SnakeName, fmt.Sprintf("%s.go", mData.SnakeName))
-	CreateFileFromTemplate(fileName, poolModelsDirTemplate, mData)
-
-	// create the model's query directory (q)
-	if _, err := os.Stat(filepath.Join(dir, PoolQueryPackage, mData.SnakeName)); err != nil {
-		if err = os.MkdirAll(filepath.Join(dir, PoolQueryPackage, mData.SnakeName), 0755); err != nil {
-			panic(err)
-		}
-	}
-	// create the model's query file in query dir (q)
-	fileName = filepath.Join(dir, PoolQueryPackage, fmt.Sprintf("%s.go", mData.SnakeName))
-	CreateFileFromTemplate(fileName, poolQueryTemplate, mData)
-	// create the model's query file in model's query dir (q/model)
-	fileName = filepath.Join(dir, PoolQueryPackage, mData.SnakeName, fmt.Sprintf("%s.go", mData.SnakeName))
-	CreateFileFromTemplate(fileName, poolModelsQueryTemplate, mData)
 }
 
 // CreateFileFromTemplate generates a new file from the given template and data
