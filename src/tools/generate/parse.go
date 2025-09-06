@@ -127,117 +127,8 @@ type MethodASTData struct {
 	ToDeclare bool
 }
 
-// A ModelASTData holds fields and methods data of a Model
-type ModelASTData struct {
-	Name         string
-	ModelType    string
-	IsModelMixin bool
-	Fields       map[string]FieldASTData
-	Methods      map[string]MethodASTData
-	Mixins       map[string]bool
-	Embeds       map[string]bool
-	Validated    bool
-}
-
-// newModelASTData returns an initialized ModelASTData instance
-func newModelASTData(name string) ModelASTData {
-	return ModelASTData{
-		Name:         name,
-		Fields:       defaultFields(name),
-		IsModelMixin: ModelMixins[name],
-		Methods:      make(map[string]MethodASTData),
-		Mixins:       make(map[string]bool),
-		Embeds:       make(map[string]bool),
-		ModelType:    "",
-	}
-}
-
-// defaultFields returns the map of default fields for the model with the given name
-func defaultFields(name string) map[string]FieldASTData {
-	res := make(map[string]FieldASTData)
-	idField := FieldASTData{
-		Name: "ID",
-		JSON: "id",
-		Type: TypeData{
-			Type: "int64",
-		},
-		FType: fieldtype.Integer,
-	}
-	res["ID"] = idField
-	switch name {
-	case "BaseMixin":
-		res["CreateDate"] = FieldASTData{
-			Name:        "CreateDate",
-			JSON:        "create_date",
-			Description: "Created On",
-			Type: TypeData{
-				Type:       "dates.DateTime",
-				ImportPath: DatesPath,
-			},
-			FType: fieldtype.DateTime,
-		}
-		res["CreateUID"] = FieldASTData{
-			Name:        "CreateUID",
-			JSON:        "create_uid",
-			Description: "Created By",
-			Type:        TypeData{Type: "int64"},
-			FType:       fieldtype.Integer,
-		}
-		res["WriteDate"] = FieldASTData{
-			Name:        "WriteDate",
-			JSON:        "write_date",
-			Description: "Updated On",
-			Type: TypeData{
-				Type:       "dates.DateTime",
-				ImportPath: DatesPath,
-			},
-			FType: fieldtype.DateTime,
-		}
-		res["WriteUID"] = FieldASTData{
-			Name:        "WriteUID",
-			JSON:        "write_uid",
-			Description: "Updated By",
-			Type:        TypeData{Type: "int64"},
-			FType:       fieldtype.Integer,
-		}
-		res["LastUpdate"] = FieldASTData{
-			Name:        "LastUpdate",
-			JSON:        "__last_update",
-			Description: "Last Updated On",
-			Type: TypeData{
-				Type:       "dates.DateTime",
-				ImportPath: DatesPath,
-			},
-			FType: fieldtype.DateTime,
-		}
-		res["DisplayName"] = FieldASTData{
-			Name:        "DisplayName",
-			JSON:        "display_name",
-			Description: "Display Name",
-			Type:        TypeData{Type: "string"},
-			FType:       fieldtype.Char,
-		}
-	case "ModelMixin":
-		res["HexyaExternalID"] = FieldASTData{
-			Name:        "HexyaExternalID",
-			JSON:        "hexya_external_id",
-			Description: "External ID",
-			Type:        TypeData{Type: "string"},
-			FType:       fieldtype.Char,
-		}
-		res["HexyaVersion"] = FieldASTData{
-			Name:        "HexyaVersion",
-			JSON:        "hexya_version",
-			Description: "External Version",
-			Type:        TypeData{Type: "int"},
-			FType:       fieldtype.Integer,
-		}
-	}
-	return res
-}
-
-// GetModelsASTData returns the ModelASTData of all models found when parsing program.
-func GetModelsASTData(modules []*ModuleInfo) map[string]ModelASTData {
+// GetModelsASTData returns the ModelGraph of all models found when parsing program.
+func GetModelsASTData(modules []*ModuleInfo) *ModelGraph {
 	return GetModelsASTDataForModules(modules, true)
 }
 
@@ -245,8 +136,8 @@ func GetModelsASTData(modules []*ModuleInfo) map[string]ModelASTData {
 // If validate is true, then only models that have been explicitly declared will appear in
 // the result. Mixins and embeddings will be inflated too. Use this if you want validate the
 // whole application.
-func GetModelsASTDataForModules(modInfos []*ModuleInfo, validate bool) map[string]ModelASTData {
-	modelsData := make(map[string]ModelASTData)
+func GetModelsASTDataForModules(modInfos []*ModuleInfo, validate bool) *ModelGraph {
+	graph := NewModelGraph()
 	for _, modInfo := range modInfos {
 		for _, file := range modInfo.Syntax {
 			ast.Inspect(file, func(n ast.Node) bool {
@@ -258,74 +149,29 @@ func GetModelsASTDataForModules(modInfos []*ModuleInfo, validate bool) map[strin
 					}
 					switch {
 					case fnctName == "addMethod":
-						parseAddMethod(node, modInfo, &modelsData, false)
+						parseAddMethod(node, modInfo, graph, false)
 					case fnctName == "NewMethod":
-						parseAddMethod(node, modInfo, &modelsData, true)
+						parseAddMethod(node, modInfo, graph, true)
 					case fnctName == "InheritModel":
-						parseMixInModel(node, modInfo, &modelsData)
+						parseMixInModel(node, modInfo, graph)
 					case fnctName == "AddFields":
-						parseAddFields(node, modInfo, &modelsData)
+						parseAddFields(node, modInfo, graph)
 					case strutils.StartsAndEndsWith(fnctName, "New", "Model"):
-						parseNewModel(node, &modelsData)
+						parseNewModel(node, graph)
 					}
 				}
 				return true
 			})
 		}
 	}
-	if !validate {
-		// We don't want validation, so we exit early
-		return modelsData
+	if validate {
+		graph.Inflate()
 	}
-	for modelName, md := range modelsData {
-		// Delete models that have not been declared explicitly
-		// Because it means we have a typing error
-		if !md.Validated {
-			delete(modelsData, modelName)
-		}
-		inflateMixins(modelName, &modelsData)
-		inflateEmbeds(modelName, &modelsData)
-	}
-	return modelsData
-}
-
-// inflateEmbeds populates the given model with fields from the embedded type
-func inflateEmbeds(modelName string, modelsData *map[string]ModelASTData) {
-	for emb := range (*modelsData)[modelName].Embeds {
-		relModel := (*modelsData)[modelName].Fields[emb].RelModel
-		inflateEmbeds(relModel, modelsData)
-		for fieldName, field := range (*modelsData)[relModel].Fields {
-			if _, exists := (*modelsData)[modelName].Fields[fieldName]; exists {
-				continue
-			}
-			embeddedField := field
-			embeddedField.EmbedField = true
-			(*modelsData)[modelName].Fields[fieldName] = embeddedField
-		}
-	}
-}
-
-// inflateMixins populates the given model with fields
-// and methods defined in its mixins
-func inflateMixins(modelName string, modelsData *map[string]ModelASTData) {
-	for mixin := range (*modelsData)[modelName].Mixins {
-		inflateMixins(mixin, modelsData)
-		for fieldName, field := range (*modelsData)[mixin].Fields {
-			if fieldName == "ID" {
-				continue
-			}
-			field.MixinField = true
-			(*modelsData)[modelName].Fields[fieldName] = field
-		}
-		for methodName, method := range (*modelsData)[mixin].Methods {
-			method.ToDeclare = true
-			(*modelsData)[modelName].Methods[methodName] = method
-		}
-	}
+	return graph
 }
 
 // parseMixInModel updates the mixin tree with the given node which is a InheritModel function
-func parseMixInModel(node *ast.CallExpr, modInfo *ModuleInfo, modelsData *map[string]ModelASTData) {
+func parseMixInModel(node *ast.CallExpr, modInfo *ModuleInfo, graph *ModelGraph) {
 	fNode := node.Fun.(*ast.SelectorExpr)
 	modelName, err := extractModel(fNode.X, modInfo)
 	if err != nil {
@@ -334,44 +180,42 @@ func parseMixInModel(node *ast.CallExpr, modInfo *ModuleInfo, modelsData *map[st
 		}
 		log.Panic("Unable to extract model while visiting AST", "error", err, "node", modInfo.FSet.Position(node.Pos()))
 	}
-	mixinModel, err := extractModel(node.Args[0], modInfo)
+	mixinModelName, err := extractModel(node.Args[0], modInfo)
 	if err != nil {
 		log.Panic("Unable to extract mixin model while visiting AST", "error", err)
 	}
-	if _, exists := (*modelsData)[modelName]; !exists {
-		(*modelsData)[modelName] = newModelASTData(modelName)
-	}
-	(*modelsData)[modelName].Mixins[mixinModel] = true
+	modelNode := graph.AddNode(modelName)
+	mixinNode := graph.AddNode(mixinModelName)
+	graph.AddMixinEdge(modelNode, mixinNode)
 }
 
 // parseNewModel parses the given node which is a NewXXXModel function
-func parseNewModel(node *ast.CallExpr, modelsData *map[string]ModelASTData) {
+func parseNewModel(node *ast.CallExpr, graph *ModelGraph) {
 	fName, _ := ExtractFunctionName(node)
 	modelName := strings.Trim(node.Args[0].(*ast.BasicLit).Value, "\"`")
 	modelType := strings.TrimSuffix(strings.TrimPrefix(fName, "New"), "Model")
 
-	setModelData(modelsData, modelName, modelType)
+	setModelData(graph, modelName, modelType)
 }
 
 // setModelData adds a model with the given name and type to the given modelsData
-func setModelData(modelsData *map[string]ModelASTData, modelName string, modelType string) {
-	model, exists := (*modelsData)[modelName]
-	if !exists {
-		model = newModelASTData(modelName)
-	}
+func setModelData(graph *ModelGraph, modelName string, modelType string) {
+	modelNode := graph.AddNode(modelName)
 	if modelName != "CommonMixin" {
-		model.Mixins["CommonMixin"] = true
+		commonMixinNode := graph.AddNode("CommonMixin")
+		graph.AddMixinEdge(modelNode, commonMixinNode)
 	}
 	switch modelType {
 	case "":
-		model.Mixins["BaseMixin"] = true
-		model.Mixins["ModelMixin"] = true
+		baseMixinNode := graph.AddNode("BaseMixin")
+		modelMixinNode := graph.AddNode("ModelMixin")
+		graph.AddMixinEdge(modelNode, baseMixinNode)
+		graph.AddMixinEdge(modelNode, modelMixinNode)
 	case "Transient":
-		model.Mixins["BaseMixin"] = true
+		baseMixinNode := graph.AddNode("BaseMixin")
+		graph.AddMixinEdge(modelNode, baseMixinNode)
 	}
-	model.ModelType = modelType
-	model.Validated = true
-	(*modelsData)[modelName] = model
+	modelNode.ModelType = modelType
 }
 
 // ExtractFunctionName returns the name of the called function
@@ -390,15 +234,13 @@ func ExtractFunctionName(node *ast.CallExpr) (string, error) {
 }
 
 // parseAddFields parses the given node which is an AddFields function
-func parseAddFields(node *ast.CallExpr, modInfo *ModuleInfo, modelsData *map[string]ModelASTData) {
+func parseAddFields(node *ast.CallExpr, modInfo *ModuleInfo, graph *ModelGraph) {
 	fNode := node.Fun.(*ast.SelectorExpr)
 	modelName, err := extractModel(fNode.X, modInfo)
 	if err != nil {
 		log.Panic("Unable to extract model while visiting AST", "error", err)
 	}
-	if _, exists := (*modelsData)[modelName]; !exists {
-		(*modelsData)[modelName] = newModelASTData(modelName)
-	}
+	modelNode := graph.AddNode(modelName)
 	var fields *ast.CompositeLit
 	switch n := node.Args[0].(type) {
 	case *ast.CompositeLit:
@@ -442,10 +284,11 @@ func parseAddFields(node *ast.CallExpr, modInfo *ModuleInfo, modelsData *map[str
 			fElem := elem.(*ast.KeyValueExpr)
 			fData = parseFieldAttribute(fElem, fData, modInfo)
 			if fData.embed {
-				(*modelsData)[modelName].Embeds[fieldName] = true
+				embedNode := graph.AddNode(fData.RelModel)
+				graph.AddEmbedEdge(modelNode, embedNode)
 			}
 		}
-		(*modelsData)[modelName].Fields[fieldName] = fData
+		modelNode.Fields[fieldName] = fData
 	}
 }
 
@@ -507,12 +350,13 @@ func extractSelection(expr ast.Expr) map[string]string {
 }
 
 // parseAddMethod parses the given node which is an addMethod function
-func parseAddMethod(node *ast.CallExpr, modInfo *ModuleInfo, modelsData *map[string]ModelASTData, toDeclare bool) {
+func parseAddMethod(node *ast.CallExpr, modInfo *ModuleInfo, graph *ModelGraph, toDeclare bool) {
 	fNode := node.Fun.(*ast.SelectorExpr)
 	modelName, err := extractModel(fNode.X, modInfo)
 	if err != nil {
 		log.Panic("Unable to extract model while visiting AST", "error", err)
 	}
+	modelNode := graph.AddNode(modelName)
 	methodName := strings.Trim(node.Args[0].(*ast.BasicLit).Value, "\"`")
 
 	var (
@@ -527,9 +371,6 @@ func parseAddMethod(node *ast.CallExpr, modInfo *ModuleInfo, modelsData *map[str
 	case *ast.FuncLit:
 		funcType = fd.Type
 	}
-	if _, exists := (*modelsData)[modelName]; !exists {
-		(*modelsData)[modelName] = newModelASTData(modelName)
-	}
 	methData := MethodASTData{
 		Name:      methodName,
 		Doc:       formatDocString(doc),
@@ -538,7 +379,7 @@ func parseAddMethod(node *ast.CallExpr, modInfo *ModuleInfo, modelsData *map[str
 		Returns:   extractReturnType(funcType, modInfo),
 		ToDeclare: toDeclare,
 	}
-	(*modelsData)[modelName].Methods[methodName] = methData
+	modelNode.Methods[methodName] = methData
 }
 
 // A generalMixinError is returned if the mixin is

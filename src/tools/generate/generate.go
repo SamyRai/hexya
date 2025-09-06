@@ -124,32 +124,28 @@ func trimInterfacePackagePrefix(typ string) string {
 // CreatePool generates the pool package by parsing the source code AST
 // of the given program.
 // The generated package will be put in the given dir.
-func CreatePool(modules []*ModuleInfo, dir string) {
-	modelsASTData := GetModelsASTData(modules)
+func CreatePool(graph *ModelGraph, dir string) {
 	wg := sync.WaitGroup{}
-	wg.Add(len(modelsASTData))
-	for mName, mASTData := range modelsASTData {
-		for methToADD := range methodsToAdd {
-			mASTData.Methods[methToADD] = MethodASTData{}
-		}
-		go func(modelName string, modelASTData ModelASTData) {
+	wg.Add(len(graph.Nodes))
+	for _, modelNode := range graph.Nodes {
+		go func(node *ModelNode) {
 			depsMap := map[string]bool{ModelsPath: true}
 			mData := modelData{
-				Name:                  modelName,
-				SnakeName:             strutils.SnakeCase(modelName),
+				Name:                  node.Name,
+				SnakeName:             strutils.SnakeCase(node.Name),
 				ModelsPackageName:     PoolModelPackage,
 				QueryPackageName:      PoolQueryPackage,
 				InterfacesPackageName: PoolInterfacesPackage,
-				ModelType:             modelASTData.ModelType,
-				IsModelMixin:          modelASTData.IsModelMixin,
+				ModelType:             node.ModelType,
+				IsModelMixin:          node.IsModelMixin,
 				ConditionFuncs:        []string{"And", "AndNot", "Or", "OrNot"},
 			}
 			// Add fields
-			addFieldsToModelData(modelASTData, &mData, &depsMap)
+			addFieldsToModelData(node, &mData, &depsMap)
 			// Add field types
 			addFieldTypesToModelData(&mData)
 			// Add methods
-			addMethodsToModelData(modelsASTData, &mData, &depsMap)
+			addMethodsToModelData(graph, &mData, &depsMap)
 			// Setting imports
 			var deps []string
 			for dep := range depsMap {
@@ -162,15 +158,15 @@ func CreatePool(modules []*ModuleInfo, dir string) {
 			// Writing to file
 			createPoolFiles(dir, &mData)
 			wg.Done()
-		}(mName, mASTData)
+		}(modelNode)
 	}
 	wg.Wait()
 }
 
 // addMethodsToModelData extracts data from modelsASTData to populate methods in modelData
-func addMethodsToModelData(modelsASTData map[string]ModelASTData, modelData *modelData, depsMap *map[string]bool) {
-	modelASTData := modelsASTData[modelData.Name]
-	for methodName, methodASTData := range modelASTData.Methods {
+func addMethodsToModelData(graph *ModelGraph, modelData *modelData, depsMap *map[string]bool) {
+	modelNode := graph.Nodes[modelData.Name]
+	for methodName, methodASTData := range modelNode.Methods {
 		if handler, exists := specificMethodsHandlers[methodName]; exists {
 			handler(&methodASTData, modelData, depsMap)
 			continue
@@ -180,7 +176,7 @@ func addMethodsToModelData(modelsASTData map[string]ModelASTData, modelData *mod
 			paramType := astParam.Type.Type
 			iParamType := trimInterfacePackagePrefix(paramType)
 			p := fmt.Sprintf("%s,", astParam.Name)
-			if isRS, _ := isRecordSetType(astParam.Type.Type, modelsASTData); isRS {
+			if _, ok := graph.Nodes[astParam.Type.Type]; ok {
 				iParamType = fmt.Sprintf("%sSet", modelData.Name)
 				paramType = fmt.Sprintf("%s.%sSet", PoolInterfacesPackage, modelData.Name)
 			}
@@ -201,7 +197,7 @@ func addMethodsToModelData(modelsASTData map[string]ModelASTData, modelData *mod
 			iTyp := trimInterfacePackagePrefix(typ)
 			returnAsserts = fmt.Sprintf("resTyped, _ := res.(%s)", typ)
 			returns = "resTyped"
-			if isRS, _ := isRecordSetType(typ, modelsASTData); isRS {
+			if _, ok := graph.Nodes[typ]; ok {
 				typ = fmt.Sprintf("%s.%sSet", PoolInterfacesPackage, modelData.Name)
 				iTyp = fmt.Sprintf("%sSet", modelData.Name)
 				returnAsserts = fmt.Sprintf("resTyped := res.(models.RecordSet).Collection().Wrap(\"%s\").(%s)", modelData.Name, typ)
@@ -214,7 +210,7 @@ func addMethodsToModelData(modelsASTData map[string]ModelASTData, modelData *mod
 				iTyp := trimInterfacePackagePrefix(typ)
 				call = "CallMulti"
 				(*depsMap)[ret.ImportPath] = true
-				if isRS, _ := isRecordSetType(ret.Type, modelsASTData); isRS {
+				if _, ok := graph.Nodes[ret.Type]; ok {
 					typ = fmt.Sprintf("%s.%sSet", PoolInterfacesPackage, modelData.Name)
 					iTyp = fmt.Sprintf("%sSet", modelData.Name)
 					returnAsserts += fmt.Sprintf("resTyped%d := res[%d].(models.RecordSet).Collection().Wrap(\"%s\").(%s)\n", i, i, modelData.Name, typ)
@@ -249,10 +245,10 @@ func addMethodsToModelData(modelsASTData map[string]ModelASTData, modelData *mod
 	}
 }
 
-// addFieldsToModelData extracts data from modelASTData to populate fields in modelData
-func addFieldsToModelData(modelASTData ModelASTData, modelData *modelData, depsMap *map[string]bool) {
+// addFieldsToModelData extracts data from a ModelNode to populate fields in modelData
+func addFieldsToModelData(node *ModelNode, modelData *modelData, depsMap *map[string]bool) {
 	relModels := make(map[string]bool)
-	for fieldName, fieldASTData := range modelASTData.Fields {
+	for fieldName, fieldASTData := range node.Fields {
 		typStr := fieldASTData.Type.Type
 		iTypStr := trimInterfacePackagePrefix(typStr)
 		if fieldASTData.RelModel != "" {
@@ -343,23 +339,6 @@ func createPoolFiles(dir string, mData *modelData) {
 	// create the model's query file in model's query dir (q/model)
 	fileName = filepath.Join(dir, PoolQueryPackage, mData.SnakeName, fmt.Sprintf("%s.go", mData.SnakeName))
 	CreateFileFromTemplate(fileName, poolModelsQueryTemplate, mData)
-}
-
-// isRecordSetType returns true if the given typ is a RecordSet according
-// to the AST data stored in models.
-// The second returned value is true if typ is models.RecordCollection or models.RecordSet
-// and false if it is a specific RecordSet type
-func isRecordSetType(typ string, models map[string]ModelASTData) (bool, bool) {
-	if typ == "*RecordCollection" || typ == "*models.RecordCollection" {
-		return true, true
-	}
-	if typ == "RecordSet" || typ == "models.RecordSet" {
-		return true, true
-	}
-	if _, exists := models[strings.TrimSuffix(typ, "Set")]; exists {
-		return true, false
-	}
-	return false, false
 }
 
 // CreateFileFromTemplate generates a new file from the given template and data
