@@ -12,9 +12,11 @@ import (
 func main() {
 	coursesURL, _ := url.Parse("http://localhost:8081")
 	sessionsURL, _ := url.Parse("http://localhost:8082")
+	attendeesURL, _ := url.Parse("http://localhost:8083")
 
 	coursesProxy := httputil.NewSingleHostReverseProxy(coursesURL)
 	sessionsProxy := httputil.NewSingleHostReverseProxy(sessionsURL)
+	attendeesProxy := httputil.NewSingleHostReverseProxy(attendeesURL)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/courses") {
@@ -27,8 +29,17 @@ func main() {
 			r.URL.Path = strings.TrimPrefix(r.URL.Path, "/api")
 			coursesProxy.ServeHTTP(w, r)
 		} else if strings.HasPrefix(r.URL.Path, "/api/sessions") {
+			// Is it a request for attendees of a session?
+			if strings.HasSuffix(r.URL.Path, "/attendees") {
+				r.URL.Path = strings.TrimPrefix(r.URL.Path, "/api")
+				attendeesProxy.ServeHTTP(w, r)
+				return
+			}
 			r.URL.Path = strings.TrimPrefix(r.URL.Path, "/api")
 			sessionsProxy.ServeHTTP(w, r)
+		} else if strings.HasPrefix(r.URL.Path, "/api/attendees") {
+			r.URL.Path = strings.TrimPrefix(r.URL.Path, "/api")
+			attendeesProxy.ServeHTTP(w, r)
 		} else {
 			http.Error(w, "Not Found", http.StatusNotFound)
 		}
