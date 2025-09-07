@@ -1,0 +1,41 @@
+version: '3.8'
+services:
+  consul:
+    image: consul:1.10
+    ports:
+      - "8500:8500"
+    networks:
+      - hexya-ng-net
+
+  courses-service:
+    build: ./services/courses-service
+    ports:
+      - "8081:8081"
+    networks:
+      - hexya-ng-net
+    depends_on:
+      - consul
+
+  sessions-service:
+    build: ./services/sessions-service
+    ports:
+      - "8082:8082"
+    networks:
+      - hexya-ng-net
+    depends_on:
+      - consul
+
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      - courses-service
+      - sessions-service
+      - consul
+    networks:
+      - hexya-ng-net
+
+networks:
+  hexya-ng-net:
+    driver: bridge

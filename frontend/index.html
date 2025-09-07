@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hexya NG - PoC</title>
+    <style>
+        body { font-family: sans-serif; }
+        #courses-list { margin-top: 20px; border: 1px solid #ccc; padding: 10px; }
+        .course { border-bottom: 1px solid #eee; padding: 5px 0; }
+    </style>
+</head>
+<body>
+    <h1>Hexya NG - Proof of Concept</h1>
+
+    <h2>Create a New Course</h2>
+    <form id="create-course-form">
+        <input type="text" id="course-name" placeholder="Course Name" required>
+        <input type="text" id="course-desc" placeholder="Course Description" required>
+        <button type="submit">Create Course</button>
+    </form>
+
+    <hr>
+
+    <h2>Courses</h2>
+    <button id="fetch-courses">Fetch Courses</button>
+    <div id="courses-list">
+        <!-- Courses will be listed here -->
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8080/api';
+
+        const createCourseForm = document.getElementById('create-course-form');
+        const fetchCoursesBtn = document.getElementById('fetch-courses');
+        const coursesListDiv = document.getElementById('courses-list');
+
+        createCourseForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('course-name').value;
+            const description = document.getElementById('course-desc').value;
+
+            try {
+                const response = await fetch(`${API_URL}/courses`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description }),
+                });
+                if (response.ok) {
+                    alert('Course created successfully!');
+                    createCourseForm.reset();
+                    fetchCourses();
+                } else {
+                    alert('Error creating course.');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error creating course.');
+            }
+        });
+
+        fetchCoursesBtn.addEventListener('click', fetchCourses);
+
+        async function fetchCourses() {
+            try {
+                const response = await fetch(`${API_URL}/courses`);
+                const courses = await response.json();
+
+                coursesListDiv.innerHTML = ''; // Clear list
+                if (courses && courses.length > 0) {
+                    courses.forEach(course => {
+                        const courseDiv = document.createElement('div');
+                        courseDiv.className = 'course';
+                        courseDiv.innerHTML = `<strong>ID:</strong> ${course.id}, <strong>Name:</strong> ${course.name}, <strong>Description:</strong> ${course.description}`;
+                        coursesListDiv.appendChild(courseDiv);
+                    });
+                } else {
+                    coursesListDiv.innerHTML = 'No courses found.';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error fetching courses.');
+            }
+        }
+    </script>
+</body>
+</html>
