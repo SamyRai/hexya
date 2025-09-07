@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/hexya-erp/hexya/src/tools/generate"
 	"github.com/hexya-erp/hexya/src/tools/generate/templates"
 	"os"
 	"os/exec"
@@ -52,8 +53,8 @@ in the i18n directory of the module.`,
 
 // generateAndUpdatePOFile creates the startup file of the translation update and runs it.
 func generateAndUpdatePOFiles(moduleDir string, langs []string, tmpl *template.Template) {
-	testEnabled = true
-	runGenerate(moduleDir)
+	generator := generate.NewGenerator(moduleDir, true, false, []string{})
+	generator.Run()
 	fmt.Println("Please wait, Hexya is starting ...")
 	moduleDir, _ = filepath.Abs(moduleDir)
 	loadConf := packages.Config{

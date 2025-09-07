@@ -72,16 +72,16 @@ func UpdatePOFiles(config map[string]interface{}) {
 	fmt.Println("Ok.")
 
 	modInfos := []*models.ModuleInfo{{Package: *packs[0], ModType: config2.Base}}
-	modelsASTData := ast2.GetModelsASTData(modInfos, true)
+	modelsASTData := ast2.GetModelsASTDataForModules(modInfos, true)
 
 	for _, lang := range langs {
 		fmt.Printf("Generating language %s.", lang)
 		messages := make(map[MessageRef]po.Message)
 		for model, modelASTData := range modelsASTData {
-			for field, fieldASTData := range modelASTData.Fields {
-				messages = addDescriptionToMessages(lang, model, field, fieldASTData, messages)
-				messages = addHelpToMessages(lang, model, field, fieldASTData, messages)
-				messages = addSelectionToMessages(lang, model, field, fieldASTData, messages)
+			for _, fieldASTData := range modelASTData.Fields {
+				messages = addDescriptionToMessages(lang, model, fieldASTData.Name, fieldASTData, messages)
+				messages = addHelpToMessages(lang, model, fieldASTData.Name, fieldASTData, messages)
+				messages = addSelectionToMessages(lang, model, fieldASTData.Name, fieldASTData, messages)
 			}
 		}
 		fmt.Printf(".")
@@ -298,11 +298,11 @@ func updateMessagesWithResourceTranslation(lang, id, source string, messages Mes
 }
 
 // addSelectionToMessages adds to the given messages map the selections for the given model and field
-func addSelectionToMessages(lang string, model string, field string, fieldASTData ast2.FieldASTData, messages MessageMap) MessageMap {
-	if len(fieldASTData.Selection) == 0 {
+func addSelectionToMessages(lang string, model string, field string, fieldASTData *models.FieldAST, messages MessageMap) MessageMap {
+	if len(fieldASTData.Attributes.Selection) == 0 {
 		return messages
 	}
-	selection := types.Selection(fieldASTData.Selection)
+	selection := types.Selection(fieldASTData.Attributes.Selection)
 	selTranslated := i18n.TranslateFieldSelection(lang, model, field, selection)
 	for k, v := range selection {
 		transValue := selTranslated[k]
@@ -335,8 +335,8 @@ func GetOrCreateMessage(messages MessageMap, msgRef MessageRef, value string) po
 }
 
 // addDescriptionToMessages adds to the given messages map the description translation for the given model and field
-func addDescriptionToMessages(lang string, model string, field string, fieldASTData ast2.FieldASTData, messages MessageMap) MessageMap {
-	description := fieldASTData.Description
+func addDescriptionToMessages(lang string, model string, field string, fieldASTData *models.FieldAST, messages MessageMap) MessageMap {
+	description := fieldASTData.Attributes.Description
 	if description == "" {
 		description = strutils.Title(fieldASTData.Name)
 	}
@@ -349,8 +349,8 @@ func addDescriptionToMessages(lang string, model string, field string, fieldASTD
 }
 
 // addHelpToMessages adds to the given messages map the help translation for the given model and field
-func addHelpToMessages(lang string, model string, field string, fieldASTData ast2.FieldASTData, messages MessageMap) MessageMap {
-	help := fieldASTData.Help
+func addHelpToMessages(lang string, model string, field string, fieldASTData *models.FieldAST, messages MessageMap) MessageMap {
+	help := fieldASTData.Attributes.Help
 	if help == "" {
 		return messages
 	}

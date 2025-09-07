@@ -29,7 +29,7 @@ func GetModelsASTDataForModules(moduleInfos []*models.ModuleInfo, validate bool)
 					case "NewMethod":
 						parseAddMethod(n, &modelASTDataMap)
 					case "InheritModel":
-						parseMixinModel(n, &modelASTDataMap)
+						parseMixinModel(n, moduleInfo, &modelASTDataMap)
 					case "AddFields":
 						parseAddFields(n, &modelASTDataMap)
 					case "NewModel", "NewMixinModel", "NewTransientModel":
@@ -143,7 +143,7 @@ func parseNewModel(node *ast.CallExpr, modelASTDataMap *map[string]*models.Model
 // parseMixinModel updates the mixin tree with the given node which is an InheritModel function.
 func parseMixinModel(node *ast.CallExpr, modInfo *models.ModuleInfo, modelsData *map[string]*models.ModelData) {
 	fNode := node.Fun.(*ast.SelectorExpr)
-	modelName, err := extractModel(fNode.X, modInfo)
+	modelName, err := extractModel(fNode.X)
 	if err != nil {
 		// Check if it's a General Mixin Error, skip if true
 		if _, ok := err.(generalMixinError); ok {
@@ -155,7 +155,7 @@ func parseMixinModel(node *ast.CallExpr, modInfo *models.ModuleInfo, modelsData 
 		return
 	}
 
-	mixinModelName, err := extractModel(node.Args[0], modInfo)
+	mixinModelName, err := extractModel(node.Args[0])
 	if err != nil {
 		fmt.Printf("Unable to extract mixin model: %v\n", err)
 		return
