@@ -10,9 +10,9 @@ import (
 )
 
 func main() {
-	coursesURL, _ := url.Parse("http://localhost:8081")
-	sessionsURL, _ := url.Parse("http://localhost:8082")
-	attendeesURL, _ := url.Parse("http://localhost:8083")
+	coursesURL, _ := url.Parse("http://courses-service:8081")
+	sessionsURL, _ := url.Parse("http://sessions-service:8082")
+	attendeesURL, _ := url.Parse("http://attendees-service:8083")
 
 	coursesProxy := httputil.NewSingleHostReverseProxy(coursesURL)
 	sessionsProxy := httputil.NewSingleHostReverseProxy(sessionsURL)

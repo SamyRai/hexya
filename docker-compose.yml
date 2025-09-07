@@ -1,40 +1,44 @@
 version: '3.8'
 services:
-  consul:
-    image: consul:1.10
-    ports:
-      - "8500:8500"
-    networks:
-      - hexya-ng-net
-
   courses-service:
-    build: ./services/courses-service
+    build: ./hexya-ng/services/courses-service
     ports:
       - "8081:8081"
     networks:
       - hexya-ng-net
-    depends_on:
-      - consul
+    dns:
+      - 127.0.0.1
 
   sessions-service:
-    build: ./services/sessions-service
+    build: ./hexya-ng/services/sessions-service
     ports:
       - "8082:8082"
     networks:
       - hexya-ng-net
-    depends_on:
-      - consul
+    dns:
+      - 127.0.0.1
+
+  attendees-service:
+    build: ./hexya-ng/services/attendees-service
+    ports:
+      - "8083:8083"
+    networks:
+      - hexya-ng-net
+    dns:
+      - 127.0.0.1
 
   api-gateway:
-    build: ./api-gateway
+    build: ./hexya-ng/api-gateway
     ports:
       - "8080:8080"
     depends_on:
       - courses-service
       - sessions-service
-      - consul
+      - attendees-service
     networks:
       - hexya-ng-net
+    dns:
+      - 127.0.0.1
 
 networks:
   hexya-ng-net:

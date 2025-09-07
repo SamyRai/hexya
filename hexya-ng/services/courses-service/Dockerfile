@@ -1,12 +1,14 @@
 # Build stage
-FROM golang:1.19-alpine AS builder
+FROM golang:1.22-alpine AS builder
 WORKDIR /build
 COPY go.mod .
+COPY go.sum .
 COPY main.go .
-RUN go build -o courses-service .
+RUN CGO_ENABLED=1 go build -o courses-service .
 
 # Final stage
-FROM scratch
+FROM golang:1.22
+WORKDIR /
 COPY --from=builder /build/courses-service /courses-service
 EXPOSE 8081
 CMD ["/courses-service"]
