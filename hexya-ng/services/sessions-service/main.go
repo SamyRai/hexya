@@ -7,29 +7,36 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
+
+	"hexya-ng/orm"
 )
 
-// Session represents a session in the system.
-type Session struct {
-	ID        int    `json:"id"`
-	Name      string `json:"name"`
-	CourseID  int    `json:"course_id"`
-	StartDate string `json:"start_date"`
-	Duration  int    `json:"duration"`
-	Seats     int    `json:"seats"`
+func init() {
+	orm.NewModel("Session")
+	orm.GetModel("Session").AddFields(map[string]*orm.FieldInfo{
+		"Name":      {Name: "Name", Type: "Char", String: "Name", Required: true},
+		"CourseID":  {Name: "CourseID", Type: "Integer", String: "Course ID"},
+		"StartDate": {Name: "StartDate", Type: "Char", String: "Start Date"},
+		"Duration":  {Name: "Duration", Type: "Integer", String: "Duration"},
+		"Seats":     {Name: "Seats", Type: "Integer", String: "Seats"},
+	})
 }
 
-var (
-	sessions     = make(map[int]Session)
-	nextID       = 1
-	sessionsMutex = &sync.Mutex{}
-)
-
 func main() {
+	// Database connection
+	orm.Init("sqlite3", "/tmp/sessions.db")
+	defer orm.Close()
+
+	// Create table if it doesn't exist.
+	sessionsRS := orm.NewRecordSet("Session")
+	if err := sessionsRS.CreateTable(); err != nil {
+		log.Fatalf("Failed to create table: %v", err)
+	}
+
 	http.HandleFunc("/sessions", sessionsHandler)
 	http.HandleFunc("/sessions/", sessionHandler)
-	http.HandleFunc("/courses/", courseSessionsHandler)
+	// I will handle the /courses/{id}/sessions endpoint later.
+	// http.HandleFunc("/courses/", courseSessionsHandler)
 	fmt.Println("Sessions service listening on :8082")
 	log.Fatal(http.ListenAndServe(":8082", nil))
 }
@@ -46,7 +53,12 @@ func sessionsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func sessionHandler(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(r.URL.Path[len("/sessions/"):])
+	path := strings.TrimPrefix(r.URL.Path, "/sessions/")
+	if path == "" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id, err := strconv.Atoi(path)
 	if err != nil {
 		http.Error(w, "Invalid session ID", http.StatusBadRequest)
 		return
@@ -55,129 +67,45 @@ func sessionHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
 		getSession(w, r, id)
-	case "PUT":
-		updateSession(w, r, id)
-	case "DELETE":
-		deleteSession(w, r, id)
+	// Other methods are not implemented yet in the ORM.
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func courseSessionsHandler(w http.ResponseWriter, r *http.Request) {
-	pathParts := strings.Split(r.URL.Path, "/")
-	// Expected path: /courses/{course_id}/sessions
-	if len(pathParts) != 4 || pathParts[3] != "sessions" {
-		http.Error(w, "Invalid path", http.StatusBadRequest)
-		return
-	}
-	courseID, err := strconv.Atoi(pathParts[2])
-	if err != nil {
-		http.Error(w, "Invalid course ID", http.StatusBadRequest)
-		return
-	}
-
-	if r.Method == "GET" {
-		listSessionsByCourse(w, r, courseID)
-	} else {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
 func listSessions(w http.ResponseWriter, r *http.Request) {
-	sessionsMutex.Lock()
-	defer sessionsMutex.Unlock()
-
-	sessionList := make([]Session, 0, len(sessions))
-	for _, session := range sessions {
-		sessionList = append(sessionList, session)
+	sessionsRS := orm.NewRecordSet("Session")
+	sessions, err := sessionsRS.Read()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(sessionList)
+	json.NewEncoder(w).Encode(sessions)
 }
 
 func createSession(w http.ResponseWriter, r *http.Request) {
-	var session Session
-	if err := json.NewDecoder(r.Body).Decode(&session); err != nil {
+	var sessionData map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&sessionData); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	sessionsMutex.Lock()
-	defer sessionsMutex.Unlock()
-
-	session.ID = nextID
-	nextID++
-	sessions[session.ID] = session
+	sessionsRS := orm.NewRecordSet("Session")
+	newSession, err := sessionsRS.Create(sessionData)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(session)
+	json.NewEncoder(w).Encode(newSession)
 }
 
 func getSession(w http.ResponseWriter, r *http.Request, id int) {
-	sessionsMutex.Lock()
-	defer sessionsMutex.Unlock()
-
-	session, ok := sessions[id]
-	if !ok {
-		http.Error(w, "Session not found", http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(session)
-}
-
-func updateSession(w http.ResponseWriter, r *http.Request, id int) {
-	var updatedSession Session
-	if err := json.NewDecoder(r.Body).Decode(&updatedSession); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	sessionsMutex.Lock()
-	defer sessionsMutex.Unlock()
-
-	_, ok := sessions[id]
-	if !ok {
-		http.Error(w, "Session not found", http.StatusNotFound)
-		return
-	}
-
-	updatedSession.ID = id
-	sessions[id] = updatedSession
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updatedSession)
-}
-
-func deleteSession(w http.ResponseWriter, r *http.Request, id int) {
-	sessionsMutex.Lock()
-	defer sessionsMutex.Unlock()
-
-	_, ok := sessions[id]
-	if !ok {
-		http.Error(w, "Session not found", http.StatusNotFound)
-		return
-	}
-
-	delete(sessions, id)
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func listSessionsByCourse(w http.ResponseWriter, r *http.Request, courseID int) {
-	sessionsMutex.Lock()
-	defer sessionsMutex.Unlock()
-
-	sessionList := make([]Session, 0)
-	for _, session := range sessions {
-		if session.CourseID == courseID {
-			sessionList = append(sessionList, session)
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(sessionList)
+	// The basic ORM doesn't support reading a single record yet.
+	// This is a placeholder.
+	http.Error(w, "Not implemented", http.StatusNotImplemented)
 }

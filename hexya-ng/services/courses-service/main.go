@@ -8,29 +8,27 @@ import (
 	"strconv"
 	"strings"
 
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
+	"hexya-ng/orm"
 )
 
-// Course represents a course in the system.
-type Course struct {
-	gorm.Model
-	Name        string `json:"name"`
-	Description string `json:"description"`
+func init() {
+	orm.NewModel("Course")
+	orm.GetModel("Course").AddFields(map[string]*orm.FieldInfo{
+		"Name":        {Name: "Name", Type: "Char", String: "Name", Required: true},
+		"Description": {Name: "Description", Type: "Char", String: "Description"},
+	})
 }
-
-var db *gorm.DB
 
 func main() {
 	// Database connection
-	var err error
-	db, err = gorm.Open(sqlite.Open("courses.db"), &gorm.Config{})
-	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
-	}
+	orm.Init("sqlite3", "/tmp/courses.db")
+	defer orm.Close()
 
-	// Auto-migrate the schema
-	db.AutoMigrate(&Course{})
+	// Create table if it doesn't exist.
+	coursesRS := orm.NewRecordSet("Course")
+	if err := coursesRS.CreateTable(); err != nil {
+		log.Fatalf("Failed to create table: %v", err)
+	}
 
 	http.HandleFunc("/courses", coursesHandler)
 	http.HandleFunc("/courses/", courseHandler)
@@ -74,8 +72,9 @@ func courseHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func listCourses(w http.ResponseWriter, r *http.Request) {
-	var courses []Course
-	if err := db.Find(&courses).Error; err != nil {
+	coursesRS := orm.NewRecordSet("Course")
+	courses, err := coursesRS.Read()
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -85,81 +84,38 @@ func listCourses(w http.ResponseWriter, r *http.Request) {
 }
 
 func createCourse(w http.ResponseWriter, r *http.Request) {
-	var course Course
-	if err := json.NewDecoder(r.Body).Decode(&course); err != nil {
+	var courseData map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&courseData); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if err := db.Create(&course).Error; err != nil {
+	coursesRS := orm.NewRecordSet("Course")
+	newCourse, err := coursesRS.Create(courseData)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(course)
+	json.NewEncoder(w).Encode(newCourse)
 }
 
 func getCourse(w http.ResponseWriter, r *http.Request, id int) {
-	var course Course
-	if err := db.First(&course, id).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			http.Error(w, "Course not found", http.StatusNotFound)
-		} else {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(course)
+	// The basic ORM doesn't support reading a single record yet.
+	// This is a placeholder.
+	http.Error(w, "Not implemented", http.StatusNotImplemented)
 }
 
 func updateCourse(w http.ResponseWriter, r *http.Request, id int) {
-	var course Course
-	if err := db.First(&course, id).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			http.Error(w, "Course not found", http.StatusNotFound)
-		} else {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-		return
-	}
-
-	var updatedCourse Course
-	if err := json.NewDecoder(r.Body).Decode(&updatedCourse); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	course.Name = updatedCourse.Name
-	course.Description = updatedCourse.Description
-
-	if err := db.Save(&course).Error; err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(course)
+	// The basic ORM doesn't support updating yet.
+	// This is a placeholder.
+	http.Error(w, "Not implemented", http.StatusNotImplemented)
 }
 
 func deleteCourse(w http.ResponseWriter, r *http.Request, id int) {
-	var course Course
-	if err := db.First(&course, id).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			http.Error(w, "Course not found", http.StatusNotFound)
-		} else {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-		return
-	}
-
-	if err := db.Delete(&course).Error; err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+	// The basic ORM doesn't support deleting yet.
+	// This is a placeholder.
+	http.Error(w, "Not implemented", http.StatusNotImplemented)
 }

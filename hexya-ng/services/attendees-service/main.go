@@ -7,26 +7,33 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
+
+	"hexya-ng/orm"
 )
 
-// Attendee represents an attendee in the system.
-type Attendee struct {
-	ID        int    `json:"id"`
-	Name      string `json:"name"`
-	SessionID int    `json:"session_id"`
+func init() {
+	orm.NewModel("Attendee")
+	orm.GetModel("Attendee").AddFields(map[string]*orm.FieldInfo{
+		"Name":      {Name: "Name", Type: "Char", String: "Name", Required: true},
+		"SessionID": {Name: "SessionID", Type: "Integer", String: "Session ID"},
+	})
 }
 
-var (
-	attendees     = make(map[int]Attendee)
-	nextID        = 1
-	attendeesMutex = &sync.Mutex{}
-)
-
 func main() {
+	// Database connection
+	orm.Init("sqlite3", "/tmp/attendees.db")
+	defer orm.Close()
+
+	// Create table if it doesn't exist.
+	attendeesRS := orm.NewRecordSet("Attendee")
+	if err := attendeesRS.CreateTable(); err != nil {
+		log.Fatalf("Failed to create table: %v", err)
+	}
+
 	http.HandleFunc("/attendees", attendeesHandler)
 	http.HandleFunc("/attendees/", attendeeHandler)
-	http.HandleFunc("/sessions/", sessionAttendeesHandler)
+	// I will handle the /sessions/{id}/attendees endpoint later.
+	// http.HandleFunc("/sessions/", sessionAttendeesHandler)
 	fmt.Println("Attendees service listening on :8083")
 	log.Fatal(http.ListenAndServe(":8083", nil))
 }
@@ -43,7 +50,12 @@ func attendeesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func attendeeHandler(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(r.URL.Path[len("/attendees/"):])
+	path := strings.TrimPrefix(r.URL.Path, "/attendees/")
+	if path == "" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id, err := strconv.Atoi(path)
 	if err != nil {
 		http.Error(w, "Invalid attendee ID", http.StatusBadRequest)
 		return
@@ -52,57 +64,38 @@ func attendeeHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
 		getAttendee(w, r, id)
-	case "PUT":
-		updateAttendee(w, r, id)
-	case "DELETE":
-		deleteAttendee(w, r, id)
+	// Other methods are not implemented yet in the ORM.
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func sessionAttendeesHandler(w http.ResponseWriter, r *http.Request) {
-	pathParts := strings.Split(r.URL.Path, "/")
-	// Expected path: /sessions/{session_id}/attendees
-	if len(pathParts) != 4 || pathParts[3] != "attendees" {
-		http.Error(w, "Invalid path", http.StatusBadRequest)
-		return
-	}
-	sessionID, err := strconv.Atoi(pathParts[2])
-	if err != nil {
-		http.Error(w, "Invalid session ID", http.StatusBadRequest)
-		return
-	}
-
-	if r.Method == "GET" {
-		listAttendeesBySession(w, r, sessionID)
-	} else {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
 func listAttendees(w http.ResponseWriter, r *http.Request) {
-	attendeesMutex.Lock()
-	defer attendeesMutex.Unlock()
-
-	attendeeList := make([]Attendee, 0, len(attendees))
-	for _, attendee := range attendees {
-		attendeeList = append(attendeeList, attendee)
+	attendeesRS := orm.NewRecordSet("Attendee")
+	attendees, err := attendeesRS.Read()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(attendeeList)
+	json.NewEncoder(w).Encode(attendees)
 }
 
 func createAttendee(w http.ResponseWriter, r *http.Request) {
-	var attendee Attendee
-	if err := json.NewDecoder(r.Body).Decode(&attendee); err != nil {
+	var attendeeData map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&attendeeData); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Check if session exists
-	sessionURL := fmt.Sprintf("http://localhost:8082/sessions/%d", attendee.SessionID)
+	sessionID, ok := attendeeData["SessionID"].(float64) // JSON numbers are float64
+	if !ok {
+		http.Error(w, "Invalid session ID", http.StatusBadRequest)
+		return
+	}
+	sessionURL := fmt.Sprintf("http://localhost:8082/sessions/%d", int(sessionID))
 	resp, err := http.Get(sessionURL)
 	if err != nil {
 		http.Error(w, "Error verifying session: "+err.Error(), http.StatusInternalServerError)
@@ -115,80 +108,20 @@ func createAttendee(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	attendeesMutex.Lock()
-	defer attendeesMutex.Unlock()
-
-	attendee.ID = nextID
-	nextID++
-	attendees[attendee.ID] = attendee
+	attendeesRS := orm.NewRecordSet("Attendee")
+	newAttendee, err := attendeesRS.Create(attendeeData)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(attendee)
+	json.NewEncoder(w).Encode(newAttendee)
 }
 
 func getAttendee(w http.ResponseWriter, r *http.Request, id int) {
-	attendeesMutex.Lock()
-	defer attendeesMutex.Unlock()
-
-	attendee, ok := attendees[id]
-	if !ok {
-		http.Error(w, "Attendee not found", http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(attendee)
-}
-
-func updateAttendee(w http.ResponseWriter, r *http.Request, id int) {
-	var updatedAttendee Attendee
-	if err := json.NewDecoder(r.Body).Decode(&updatedAttendee); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	attendeesMutex.Lock()
-	defer attendeesMutex.Unlock()
-
-	_, ok := attendees[id]
-	if !ok {
-		http.Error(w, "Attendee not found", http.StatusNotFound)
-		return
-	}
-
-	updatedAttendee.ID = id
-	attendees[id] = updatedAttendee
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updatedAttendee)
-}
-
-func deleteAttendee(w http.ResponseWriter, r *http.Request, id int) {
-	attendeesMutex.Lock()
-	defer attendeesMutex.Unlock()
-
-	_, ok := attendees[id]
-	if !ok {
-		http.Error(w, "Attendee not found", http.StatusNotFound)
-		return
-	}
-
-	delete(attendees, id)
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func listAttendeesBySession(w http.ResponseWriter, r *http.Request, sessionID int) {
-	attendeesMutex.Lock()
-	defer attendeesMutex.Unlock()
-
-	attendeeList := make([]Attendee, 0)
-	for _, attendee := range attendees {
-		if attendee.SessionID == sessionID {
-			attendeeList = append(attendeeList, attendee)
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(attendeeList)
+	// The basic ORM doesn't support reading a single record yet.
+	// This is a placeholder.
+	http.Error(w, "Not implemented", http.StatusNotImplemented)
 }
