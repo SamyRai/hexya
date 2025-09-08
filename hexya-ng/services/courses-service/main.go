@@ -11,6 +11,11 @@ import (
 	"hexya-ng/orm"
 )
 
+// Server holds the dependencies for the service.
+type Server struct {
+	coursesRS orm.RecordSetI
+}
+
 func init() {
 	orm.NewModel("Course")
 	orm.GetModel("Course").AddFields(map[string]*orm.FieldInfo{
@@ -30,24 +35,28 @@ func main() {
 		log.Fatalf("Failed to create table: %v", err)
 	}
 
-	http.HandleFunc("/courses", coursesHandler)
-	http.HandleFunc("/courses/", courseHandler)
+	server := &Server{
+		coursesRS: coursesRS,
+	}
+
+	http.HandleFunc("/courses", server.coursesHandler)
+	http.HandleFunc("/courses/", server.courseHandler)
 	fmt.Println("Courses service listening on :8081")
 	log.Fatal(http.ListenAndServe(":8081", nil))
 }
 
-func coursesHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) coursesHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		listCourses(w, r)
+		s.listCourses(w, r)
 	case "POST":
-		createCourse(w, r)
+		s.createCourse(w, r)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func courseHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) courseHandler(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/courses/")
 	if path == "" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -61,19 +70,18 @@ func courseHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case "GET":
-		getCourse(w, r, id)
+		s.getCourse(w, r, id)
 	case "PUT":
-		updateCourse(w, r, id)
+		s.updateCourse(w, r, id)
 	case "DELETE":
-		deleteCourse(w, r, id)
+		s.deleteCourse(w, r, id)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func listCourses(w http.ResponseWriter, r *http.Request) {
-	coursesRS := orm.NewRecordSet("Course")
-	courses, err := coursesRS.Read()
+func (s *Server) listCourses(w http.ResponseWriter, r *http.Request) {
+	courses, err := s.coursesRS.Read()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -83,15 +91,14 @@ func listCourses(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(courses)
 }
 
-func createCourse(w http.ResponseWriter, r *http.Request) {
+func (s *Server) createCourse(w http.ResponseWriter, r *http.Request) {
 	var courseData map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&courseData); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	coursesRS := orm.NewRecordSet("Course")
-	newCourse, err := coursesRS.Create(courseData)
+	newCourse, err := s.coursesRS.Create(courseData)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -102,20 +109,37 @@ func createCourse(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(newCourse)
 }
 
-func getCourse(w http.ResponseWriter, r *http.Request, id int) {
-	// The basic ORM doesn't support reading a single record yet.
-	// This is a placeholder.
-	http.Error(w, "Not implemented", http.StatusNotImplemented)
+func (s *Server) getCourse(w http.ResponseWriter, r *http.Request, id int) {
+	course, err := s.coursesRS.ReadOne(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(course)
 }
 
-func updateCourse(w http.ResponseWriter, r *http.Request, id int) {
-	// The basic ORM doesn't support updating yet.
-	// This is a placeholder.
-	http.Error(w, "Not implemented", http.StatusNotImplemented)
+func (s *Server) updateCourse(w http.ResponseWriter, r *http.Request, id int) {
+	var courseData map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&courseData); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := s.coursesRS.Write(id, courseData); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
-func deleteCourse(w http.ResponseWriter, r *http.Request, id int) {
-	// The basic ORM doesn't support deleting yet.
-	// This is a placeholder.
-	http.Error(w, "Not implemented", http.StatusNotImplemented)
+func (s *Server) deleteCourse(w http.ResponseWriter, r *http.Request, id int) {
+	if err := s.coursesRS.Unlink(id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
