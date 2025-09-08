@@ -84,3 +84,6 @@ pool/
 /xsd/
 /src/server/resources/
 /src/server/i18n/
+
+# Hexya NG services
+/hexya-ng/services/courses-service/courses-service

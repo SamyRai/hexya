@@ -21,7 +21,7 @@ func init() {
 
 func main() {
 	// Database connection
-	orm.Init("sqlite3", "/tmp/courses.db")
+	orm.Init("sqlite3", "./courses.db")
 	defer orm.Close()
 
 	// Create table if it doesn't exist.
