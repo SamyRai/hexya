@@ -24,7 +24,7 @@ require (
 	github.com/pelletier/go-toml v1.6.0 // indirect
 	github.com/smartystreets/goconvey v0.0.0-20190306220146-200a235640ff
 	github.com/spf13/afero v1.2.2 // indirect
-	github.com/spf13/cobra v0.0.7
+	github.com/spf13/cobra v1.10.2
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.21.0
