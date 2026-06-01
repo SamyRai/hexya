@@ -7,7 +7,7 @@ require (
 	github.com/cockroachdb/apd v1.1.0 // indirect
 	github.com/cockroachdb/apd/v3 v3.2.3
 	github.com/disintegration/imaging v1.6.2
-	github.com/flosch/pongo2 v0.0.0-20190707114632-bbf5a6c351f4
+	github.com/flosch/pongo2 v0.0.0-20200913210552-0d938eb266f3
 	github.com/gin-contrib/pprof v1.5.4
 	github.com/gin-contrib/sessions v1.1.0
 	github.com/gin-contrib/sse v0.1.0 // indirect
