@@ -9,7 +9,7 @@ require (
 	github.com/disintegration/imaging v1.6.2
 	github.com/flosch/pongo2 v0.0.0-20190707114632-bbf5a6c351f4
 	github.com/gin-contrib/pprof v1.5.4
-	github.com/gin-contrib/sessions v0.0.5
+	github.com/gin-contrib/sessions v1.1.0
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/gin-gonic/gin v1.12.0
 	github.com/golang/protobuf v1.3.2 // indirect
